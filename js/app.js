@@ -852,7 +852,7 @@ function renderAuth() {
       try { signup ? await store.signUp(em, pw) : await store.signIn(em, pw); }
       catch (e) { $("#aerr").textContent = authErr(e); }
     };
-    $("#ago").onclick = go; $("#pw").onkeydown = e => e.key === "Enter" && go();
+    $("#ago").onclick = go; $("#pw").addEventListener("keydown", e => { if (e.key === "Enter") go(); });
   };
   draw();
 }
