@@ -393,7 +393,7 @@ function vProfile(v, force) {
   v.innerHTML = top("Profil", u?.email ? esc(u.email) : "Mode local (sans compte)", `<button class="iconbtn" data-a="tab" data-v="upnext" aria-label="Fermer">${I.x}</button>`) + `
   <div class="stats" id="pstats">${profStats()}</div>
   <div class="card" id="pushcard">${pushCard()}</div>
-  <div class="card"><h3>Importer depuis TV Time</h3><p>Choisis ton export RGPD TV Time (le .zip entier, ou les fichiers .csv comme <i>tracking-prod-records-v2.csv</i>). Marche aussi avec une sauvegarde Bobine (.json).</p>
+  <div class="card"><h3>Importer mon historique</h3><p>Export <b>Binge Boxd</b> (le .zip, ou sélectionne tous les .csv du dossier), export RGPD <b>TV Time</b>, ou sauvegarde Bobine (.json).</p>
     <input type="file" id="impfile" accept=".zip,.csv,.json,application/zip,text/csv,application/json" multiple hidden>
     <button class="btn pri" data-a="impPick" style="width:100%">${I.up}Choisir le fichier</button><div id="impzone"></div></div>
 
@@ -765,6 +765,24 @@ async function runImport(files) {
       });
       await store.bulk({ shows, movies: b.movies.map(m => ({ ...(store.data.movies.get(m.id) || {}), ...m })) });
       z.innerHTML = `<div class="log">✅ Sauvegarde restaurée.</div>`;
+    };
+    return;
+  }
+
+  if (an.binge) {
+    const b = an.binge;
+    const st = b.shows.reduce((o, x) => (o[x.status || "watching"] = (o[x.status || "watching"] || 0) + 1, o), {});
+    log.textContent = `Export Binge Boxd détecté ✓\n${plural(b.shows.length, "série")} (${st.watching || 0} en cours/vues, ${st.later || 0} plus tard, ${st.stopped || 0} arrêtées)\n${plural(b.epCount, "épisode")} vus\n${plural(b.movies.filter(m => m.status === "watched").length, "film")} vus · ${b.movies.filter(m => m.status === "watchlist").length} à voir`;
+    z.insertAdjacentHTML("beforeend", `<button class="btn pri" id="impgo" style="width:100%">Importer</button>`);
+    $("#impgo").onclick = async () => {
+      $("#impgo").remove();
+      z.insertAdjacentHTML("beforeend", `<div class="prog"><i id="impbar"></i></div><div id="impst" style="font-size:13px;color:var(--mu)"></div>`);
+      try {
+        const res = await imp.resolveBinge(b, store.data, (d, n, l) => { $("#impbar").style.width = (d / n * 100) + "%"; $("#impst").textContent = `${d}/${n} · ${l || ""}`; });
+        $("#impst").textContent = "Enregistrement…";
+        await store.bulk({ shows: res.shows, movies: res.movies }, (d, n) => { $("#impst").textContent = `Enregistrement ${d}/${n}`; });
+        z.innerHTML = `<div class="log">✅ Import terminé : ${plural(res.shows.length, "série")}, ${plural(b.epCount, "épisode")}, ${plural(res.movies.length, "film")}.${res.unresolved.length ? "\n\n⚠️ Introuvables sur TMDB : " + res.unresolved.join(", ") : ""}</div>`;
+      } catch (e) { z.insertAdjacentHTML("beforeend", `<div class="err">Erreur : ${esc(e.message)}</div>`); }
     };
     return;
   }

@@ -112,6 +112,10 @@ export async function analyze(files, onFile) {
     } else entries.push({ name: f.name, text: await f.text() });
   }
 
+  // Export Binge Boxd : tout est déjà en IDs TMDB → import exact
+  const bb = analyzeBinge(entries);
+  if (bb) return { binge: bb, shows: [], movies: [], report: [], epCount: bb.epCount };
+
   const shows = new Map(), movies = new Map(), report = [];
   let bobine = null;
 
@@ -304,4 +308,94 @@ function loadJSZip() {
     document.head.appendChild(s);
   });
   return jszipP;
+}
+
+
+// ═════════════ Binge Boxd ═════════════
+// episode-watches.csv : episodeId = S<tmdbShowId>S<saison>E<épisode>
+// watch-sessions.csv  : statut par série (completed, caught-up, in-progress, paused, not-started, dropped)
+// movie-watches.csv / movie-watchlist.csv / reviews.csv (notes /5 des films)
+function analyzeBinge(entries) {
+  const get = n => entries.find(e => e.name.split("/").pop().toLowerCase() === n);
+  const ew = get("episode-watches.csv"), ws = get("watch-sessions.csv");
+  if (!ew && !ws) return null;
+  if (ew && !/episodeid/i.test(ew.text.slice(0, 200))) return null;
+  const shows = new Map(), movies = new Map();
+  const show = id => { if (!shows.has(id)) shows.set(id, { id, eps: new Set(), date: 0, status: null, sessionDate: 0 }); return shows.get(id); };
+  let epCount = 0;
+  if (ew) for (const r of parseCSV(ew.text)) {
+    const m = /^S(\d+)S(\d+)E(\d+)$/.exec(r.episodeid || "");
+    if (!m) continue;
+    const s = show(+m[1]); const k = +m[2] + ":" + +m[3];
+    if (!s.eps.has(k)) { s.eps.add(k); epCount++; }
+    s.date = Math.max(s.date, toDate(r.watchedat));
+  }
+  const MAP = { completed: "watching", "caught-up": "watching", "in-progress": "watching", paused: "later", "not-started": "later", dropped: "stopped" };
+  if (ws) for (const r of parseCSV(ws.text)) {
+    const id = +r.showid; if (!id) continue;
+    const s = show(id); const d = toDate(r.lastwatchedat) || toDate(r.startedat);
+    if (d >= s.sessionDate) { s.sessionDate = d; s.status = MAP[r.status] || "watching"; }
+    s.date = Math.max(s.date, d);
+  }
+  const sw = get("shows-watched.csv");
+  if (sw) for (const r of parseCSV(sw.text)) { const id = +r.showid; if (id) { const s = show(id); s.date = Math.max(s.date, toDate(r.createdat)); } }
+
+  const mw = get("movie-watches.csv");
+  if (mw) for (const r of parseCSV(mw.text)) {
+    const id = +r.movieid; if (!id) continue;
+    const p = movies.get(id) || { id, status: "watched", date: 0 };
+    p.status = "watched"; p.date = Math.max(p.date, toDate(r.watchedat)); p.runtime = +r.runtime || p.runtime;
+    movies.set(id, p);
+  }
+  const wl = get("movie-watchlist.csv");
+  if (wl) for (const r of parseCSV(wl.text)) {
+    const id = +r.movieid; if (!id || movies.has(id)) continue;
+    movies.set(id, { id, status: "watchlist", date: toDate(r.createdat) });
+  }
+  const rv = get("reviews.csv");
+  if (rv) for (const r of parseCSV(rv.text)) {
+    if (r.reviewabletype !== "movie" || r.isdeleted === "true") continue;
+    const m = movies.get(+r.tmdbid); const n = Math.round(parseFloat(r.rating));
+    if (m && n >= 1 && n <= 5) m.rating = n;
+  }
+  return { shows: [...shows.values()], movies: [...movies.values()], epCount };
+}
+
+export async function resolveBinge(bb, existing, onProgress) {
+  const total = bb.shows.length + bb.movies.length;
+  let done = 0; const tick = l => onProgress?.(++done, total, l);
+  const unresolved = [], shows = [], movies = [];
+  await Promise.all(bb.shows.map(async s => {
+    let t = null;
+    try { t = await tmdb.tv(s.id); } catch (e) { unresolved.push("Série TMDB " + s.id); }
+    const prev = existing.shows.get(s.id);
+    const watched = {};
+    for (const k in prev?.watched || {}) watched[k] = [...prev.watched[k]];
+    for (const k of s.eps) { const [se, ep] = k.split(":").map(Number); (watched[se] ||= []).includes(ep) || watched[se].push(ep); }
+    for (const k in watched) watched[k].sort((a, b) => a - b);
+    shows.push({
+      ...(prev || {}), id: s.id, name: t?.name || prev?.name || "Série " + s.id,
+      poster_path: t?.poster_path ?? prev?.poster_path ?? null, backdrop_path: t?.backdrop_path ?? prev?.backdrop_path ?? null,
+      runtime: t?.episode_run_time?.[0] || t?.last_episode_to_air?.runtime || prev?.runtime || null,
+      status: s.status || prev?.status || "watching", watched,
+      addedAt: prev?.addedAt || s.date || Date.now(), lastWatchedAt: Math.max(prev?.lastWatchedAt || 0, s.date || 0) || null
+    });
+    tick(t?.name);
+  }));
+  await Promise.all(bb.movies.map(async m => {
+    let d = null;
+    try { d = await tmdb.movie(m.id); } catch (e) { unresolved.push("Film TMDB " + m.id); }
+    const prev = existing.movies.get(m.id);
+    const status = prev?.status === "watched" ? "watched" : m.status;
+    movies.push({
+      ...(prev || {}), id: m.id, title: d?.title || prev?.title || "Film " + m.id,
+      poster_path: d?.poster_path ?? prev?.poster_path ?? null, backdrop_path: d?.backdrop_path ?? prev?.backdrop_path ?? null,
+      release_date: d?.release_date || prev?.release_date || "", runtime: d?.runtime || m.runtime || prev?.runtime || null,
+      status, addedAt: prev?.addedAt || m.date || Date.now(),
+      watchedAt: status === "watched" ? (prev?.watchedAt || m.date || Date.now()) : null,
+      rating: m.rating || prev?.rating || null
+    });
+    tick(d?.title);
+  }));
+  return { shows, movies, unresolved };
 }
