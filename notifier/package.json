@@ -1,0 +1,12 @@
+{
+  "name": "bobine-notifier",
+  "private": true,
+  "type": "module",
+  "description": "Envoie les notifications push de Bobine (nouveaux épisodes, sorties de films).",
+  "scripts": { "start": "node notify.mjs" },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "firebase-admin": "^14.5.0",
+    "web-push": "^3.6.7"
+  }
+}
