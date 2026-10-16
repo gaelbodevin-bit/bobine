@@ -1,0 +1,67 @@
+name: Notifications Bobine
+
+on:
+  schedule:
+    # Heures UTC : ≈ 8h et 19h à Paris
+    - cron: "12 6 * * *"
+    - cron: "12 17 * * *"
+  workflow_dispatch:
+    inputs:
+      test:
+        description: "Envoyer une notification de test à tous les appareils"
+        type: boolean
+        default: false
+      lookback:
+        description: "Fenêtre en jours (épisodes sortis depuis N jours)"
+        default: "2"
+
+permissions:
+  contents: write   # uniquement pour le commit "keepalive" (voir dernière étape)
+
+concurrency:
+  group: bobine-notify
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: notifier
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Installer
+        run: npm install --no-audit --no-fund --omit=dev
+
+      - name: Envoyer les notifications
+        env:
+          TZ: Europe/Paris
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          TMDB_KEY: ${{ secrets.TMDB_KEY }}
+          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
+          APP_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+          TEST: ${{ inputs.test }}
+          LOOKBACK_DAYS: ${{ inputs.lookback || '2' }}
+        run: node notify.mjs
+
+      # GitHub désactive les tâches planifiées d'un dépôt public sans activité depuis 60 jours.
+      # Ce commit vide (au plus une fois tous les 50 jours) les garde actives.
+      - name: Keepalive
+        if: github.event_name == 'schedule'
+        working-directory: .
+        run: |
+          last=$(git log -1 --format=%ct)
+          if [ $(( $(date +%s) - last )) -gt $(( 50 * 86400 )) ]; then
+            git config user.name "bobine-bot"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit --allow-empty -m "keepalive [skip ci]"
+            git push
+          fi
