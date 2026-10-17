@@ -223,22 +223,31 @@ const today = () => new Date().toISOString().slice(0, 10);
 export function airedList(t) {
   if (!t) return [];
   const last = t.last_episode_to_air;
+  if (!last) return [];
+  const td = today();
   const out = [];
-  const seasons = (t.seasons || []).filter(s => s.season_number > 0).sort((a, b) => a.season_number - b.season_number);
+  const seasons = (t.seasons || []).filter(s => s.season_number > 0 && s.episode_count > 0).sort((a, b) => a.season_number - b.season_number);
+  // Dernier épisode diffusé = épisode spécial (saison 0) : on prend toutes les saisons déjà commencées
+  let lastS = last.season_number, lastE = last.episode_number;
+  if (lastS === 0) {
+    const started = seasons.filter(s => s.air_date && s.air_date <= td);
+    const ls = started.at(-1); if (!ls) return [];
+    lastS = ls.season_number; lastE = ls.episode_count;
+  }
   for (const s of seasons) {
-    if (!last) break;
-    if (s.season_number < last.season_number) for (let e = 1; e <= s.episode_count; e++) out.push({ s: s.season_number, e });
-    else if (s.season_number === last.season_number) {
-      // si la série est terminée, toute la saison est sortie
-      const n = (t.next_episode_to_air && t.next_episode_to_air.season_number === s.season_number) ? last.episode_number : Math.max(last.episode_number, s.episode_count);
-      for (let e = 1; e <= n; e++) out.push({ s: s.season_number, e });
-    }
+    if (s.season_number < lastS) for (let e = 1; e <= s.episode_count; e++) out.push({ s: s.season_number, e });
+    else if (s.season_number === lastS) for (let e = 1; e <= lastE; e++) out.push({ s: s.season_number, e });
   }
   return out;
 }
 export const isWatched = (show, s, e) => !!show?.watched?.[s]?.includes(e);
 export function watchedCount(show) {
   let n = 0; for (const k in show?.watched || {}) if (k !== "0") n += show.watched[k].length; return n;
+}
+// Épisodes vus parmi ceux réellement sortis (même base que le compteur x / y)
+export function seenCount(show, t) {
+  if (!t) return watchedCount(show);
+  return airedList(t).reduce((n, x) => n + (isWatched(show, x.s, x.e) ? 1 : 0), 0);
 }
 export function progress(show, t) {
   const aired = airedList(t);
