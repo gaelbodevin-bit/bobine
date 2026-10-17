@@ -44,6 +44,7 @@ jobs:
           TZ: Europe/Paris
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           TMDB_KEY: ${{ secrets.TMDB_KEY }}
+          RAWG_KEY: ${{ secrets.RAWG_KEY }}
           VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
           VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
