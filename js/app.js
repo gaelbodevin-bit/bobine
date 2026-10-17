@@ -55,7 +55,7 @@ function rel(s) {
 }
 const SE = (s, e) => `S${String(s).padStart(2, "0")}E${String(e).padStart(2, "0")}`;
 const STATUS_FR = { "Returning Series": "En cours de diffusion", "Ended": "Terminée", "Canceled": "Annulée", "In Production": "En production", "Planned": "Annoncée", "Pilot": "Pilote", "Released": "Sorti", "Post Production": "Post-production", "Rumored": "Rumeur" };
-const SHOW_ST = { watching: "En cours", later: "À voir plus tard", stopped: "Arrêtée" };
+const SHOW_ST = { watching: "En cours", later: "À voir", stopped: "Arrêtée" };
 const plural = (n, w) => `${n} ${w}${n > 1 ? "s" : ""}`;
 function dur(min) {
   if (!min) return "0 h";
@@ -321,7 +321,7 @@ function vSeries(v) {
     const p = x.t ? progress(x.s, x.t) : null;
     if (ui.seriesFilter === "waiting" && x.t?.next_episode_to_air) return `${SE(x.t.next_episode_to_air.season_number, x.t.next_episode_to_air.episode_number)} · ${rel(x.t.next_episode_to_air.air_date)}`;
     if (p?.next && x.s.status !== "later" && x.s.status !== "stopped") return `${SE(p.next.s, p.next.e)} · ${p.remaining} à voir`;
-    if (x.s.status === "later") return "À voir plus tard";
+    if (x.s.status === "later") return "À voir";
     if (x.s.status === "stopped") return "Arrêtée";
     return x.t ? (STATUS_FR[x.t.status] || "") : "";
   };
@@ -665,7 +665,7 @@ function tvSheet(id, sh) {
   <div class="body">
   <div class="btns">${s
       ? `<button class="btn" data-a="showMenu" data-id="${id}">${s.status === "later" ? I.mark : s.status === "stopped" ? I.stop : I.play}${SHOW_ST[s.status] || "En cours"} ▾</button>`
-      : `<button class="btn pri" data-a="follow" data-id="${id}">${I.plus}Suivre</button><button class="btn" data-a="followLater" data-id="${id}">${I.mark}Plus tard</button>`}
+      : `<button class="btn pri" data-a="followLater" data-id="${id}">${I.plus}Ajouter à « À voir »</button>`}
   ${p.next ? `<button class="btn ${s ? "pri" : ""}" data-a="watchNext" data-id="${id}" data-s="${p.next.s}" data-e="${p.next.e}">${I.check}${SE(p.next.s, p.next.e)}</button>` : ""}</div>
   ${p.aired ? `<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--mu)"><span>${p.watched} / ${plural(p.aired, "épisode")} vus · ${plural(nSeasons(t), "saison")}</span><span>${Math.round(p.watched / p.aired * 100)} %</span></div><div class="bar" style="height:6px"><i style="width:${p.watched / p.aired * 100}%"></i></div>` : ""}
   ${nx ? `<div class="info">${I.clock}<div>Prochain épisode : <b>${SE(nx.season_number, nx.episode_number)}</b>${nx.air_date ? ` — ${esc(fmtLong(nx.air_date))}` : ""}</div></div>` : ""}
@@ -854,11 +854,11 @@ const A = {
     toast(all ? `Saison ${n} décochée` : `Saison ${n} marquée vue`, "Annuler", () => prev ? store.saveShow(prev) : store.deleteShow(id));
   },
   async follow(el) { const s = await showFromTmdb(+el.dataset.id); await store.saveShow(s); toast("Série ajoutée"); },
-  async followLater(el) { const s = await showFromTmdb(+el.dataset.id, "later"); await store.saveShow(s); toast("Ajoutée à « À voir plus tard »"); },
+  async followLater(el) { const s = await showFromTmdb(+el.dataset.id, "later"); await store.saveShow(s); toast("Ajoutée à « À voir »"); },
   showMenu(el) {
     const id = +el.dataset.id; const s = store.data.shows.get(id);
     menu(esc(s.name), [
-      ["watching", I.play, "En cours"], ["later", I.mark, "À voir plus tard"], ["stopped", I.stop, "Arrêtée (ne plus suivre)"]
+      ["watching", I.play, "En cours"], ["later", I.mark, "À voir"], ["stopped", I.stop, "Arrêtée (ne plus suivre)"]
     ].map(([k, ic, l]) => ({ html: ic + l, cur: s.status === k, fn: () => store.saveShow({ ...s, status: k }) }))
       .concat([{ html: I.trash + "Retirer de ma liste", bad: true, fn: () => confirm(`Retirer « ${s.name} » et son historique ?`) && store.deleteShow(id) }]));
   },
@@ -867,13 +867,10 @@ const A = {
     const id = +el.dataset.id, t = el.dataset.t;
     if (t === "tv") {
       if (store.data.shows.has(id)) return openTv(id);
-      await store.saveShow(await showFromTmdb(id)); toast("Série ajoutée"); renderResults();
+      await store.saveShow(await showFromTmdb(id, "later")); toast("Ajoutée à « À voir »"); renderResults();
     } else {
       if (store.data.movies.has(id)) return openMovie(id);
-      menu("Ajouter le film", [
-        { html: I.check + "Je l'ai vu", fn: async () => { await setMovie(id, "watched"); renderResults(); } },
-        { html: I.mark + "À voir (notif à la sortie)", fn: async () => { await setMovie(id, "watchlist"); renderResults(); } }
-      ]);
+      await setMovie(id, "watchlist"); toast("Ajouté à « À voir »"); renderResults();
     }
   },
   async mvWatched(el) {
