@@ -608,7 +608,7 @@ function gameErr(e) {
   if (e.message === "BAD_RAWG_KEY") toast("Clé RAWG refusée — vérifie-la dans le profil");
   else if (!navigator.onLine) toast("Hors ligne — affichage du cache");
 }
-const gcover = (url, alt) => url ? `<img src="${gimg(url, 420)}" alt="" loading="lazy" decoding="async">` : `<div class="noimg">${esc(alt)}</div>`;
+const gcover = (url, alt) => url ? `<img src="${gimg(url, 640)}" alt="" loading="lazy" decoding="async">` : `<div class="noimg">${esc(alt)}</div>`;
 const noKey = () => `<div class="card"><h3>${I.pad.replace("<svg", '<svg style="width:20px;height:20px;vertical-align:-4px;margin-right:8px;color:var(--ac)"')}Une clé RAWG pour les jeux</h3>
   <p>Les jaquettes, fiches et dates de sortie viennent de RAWG. Crée un compte gratuit sur <a href="https://rawg.io/apidocs" target="_blank" rel="noopener">rawg.io/apidocs</a>, clique « Get API Key » et colle la clé ici.</p>
   <input class="field" id="rawgk" placeholder="Clé API RAWG" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn pri" data-a="saveRawg" style="width:100%">Enregistrer</button></div>`;

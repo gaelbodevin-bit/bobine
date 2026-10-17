@@ -25,7 +25,7 @@ export const VAPID_PUBLIC_KEY = "BHg7wVb7QbAAHrC4iU9j02tgN2e_JJ6ZbJIW1X9Iq16j4MQ
 
 // 4) RAWG (jeux vidéo) — https://rawg.io/apidocs → « Get API Key » (gratuit)
 //    Laisse vide si tu ne suis pas de jeux : tu pourras aussi la coller dans Profil.
-export const RAWG_KEY = "";
+export const RAWG_KEY = "514c5c676e324962939cb4508cc71585";
 
 // Langue / région des contenus TMDB
 export const LANG = "fr-FR";
