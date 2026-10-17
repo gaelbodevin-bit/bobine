@@ -232,22 +232,35 @@ export function airedList(t) {
   const c = airedCache.get(t); if (c) return c;
   const r = computeAired(t); airedCache.set(t, r); return r;
 }
+// Numéro du 1er épisode de chaque saison.
+// Certaines séries (One Piece, animés longs…) sont numérotées en continu sur TMDB :
+// S02 = épisodes 62 à 77. On le détecte quand le dernier épisode diffusé dépasse la taille de sa saison.
+export function seasonStarts(t) {
+  const seasons = (t.seasons || []).filter(s => s.season_number > 0 && s.episode_count > 0).sort((a, b) => a.season_number - b.season_number);
+  const last = t.last_episode_to_air;
+  const ls = last && seasons.find(s => s.season_number === last.season_number);
+  const absolute = !!(ls && last.episode_number > ls.episode_count && seasons[0] !== ls);
+  const starts = new Map(); let acc = 1;
+  for (const s of seasons) { starts.set(s.season_number, absolute ? acc : 1); acc += s.episode_count; }
+  return { seasons, starts, absolute };
+}
 function computeAired(t) {
   const last = t.last_episode_to_air;
   if (!last) return [];
   const td = today();
   const out = [];
-  const seasons = (t.seasons || []).filter(s => s.season_number > 0 && s.episode_count > 0).sort((a, b) => a.season_number - b.season_number);
+  const { seasons, starts } = seasonStarts(t);
   // Dernier épisode diffusé = épisode spécial (saison 0) : on prend toutes les saisons déjà commencées
   let lastS = last.season_number, lastE = last.episode_number;
   if (lastS === 0) {
     const started = seasons.filter(s => s.air_date && s.air_date <= td);
     const ls = started.at(-1); if (!ls) return [];
-    lastS = ls.season_number; lastE = ls.episode_count;
+    lastS = ls.season_number; lastE = starts.get(lastS) + ls.episode_count - 1;
   }
   for (const s of seasons) {
-    if (s.season_number < lastS) for (let e = 1; e <= s.episode_count; e++) out.push({ s: s.season_number, e });
-    else if (s.season_number === lastS) for (let e = 1; e <= lastE; e++) out.push({ s: s.season_number, e });
+    const a = starts.get(s.season_number);
+    if (s.season_number < lastS) for (let e = a; e < a + s.episode_count; e++) out.push({ s: s.season_number, e });
+    else if (s.season_number === lastS) for (let e = a; e <= lastE; e++) out.push({ s: s.season_number, e });
   }
   return out;
 }
