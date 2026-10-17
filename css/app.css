@@ -227,3 +227,10 @@ img{display:block;max-width:100%}
 .colrow{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-top:1px solid var(--line)}
 .colrow input[type=color]{width:48px;height:32px;border:0;padding:0;background:none;border-radius:8px}
 .sugsub{color:var(--mu);font-size:13px;margin:-6px 0 8px}
+
+/* Alerte nouvel épisode */
+.up.fresh{box-shadow:0 0 0 2px var(--ac),0 0 22px -6px var(--ac)}
+.gp.fresh .p{box-shadow:0 0 0 2.5px var(--ac),0 0 20px -4px var(--ac)}
+.newb{position:absolute;left:5px;top:5px;background:var(--ac);color:var(--ac-tx);font-size:9.5px;font-weight:800;padding:2px 5px;border-radius:5px;letter-spacing:.03em}
+.gp .s+.s{margin-top:1px;color:var(--mu2)}
+.li .prow{margin-top:5px}
