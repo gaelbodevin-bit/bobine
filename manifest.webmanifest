@@ -3,7 +3,7 @@
   "short_name": "Bobine",
   "description": "Suivi de séries et de films : épisodes vus, prochains épisodes, notifications.",
   "lang": "fr",
-  "start_url": "./#upnext",
+  "start_url": "./#series",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
