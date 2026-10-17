@@ -7,6 +7,7 @@ export const hasFirebase = !!(FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.projectI
 const state = {
   shows: new Map(),   // id -> show
   movies: new Map(),  // id -> movie
+  games: new Map(),   // id RAWG -> jeu
   user: null,         // { uid, email } | { uid:'local' }
   ready: false
 };
@@ -23,6 +24,7 @@ function localLoad() {
     const d = JSON.parse(localStorage.getItem(LKEY) || "{}");
     state.shows = new Map(Object.entries(d.shows || {}).map(([k, v]) => [+k, v]));
     state.movies = new Map(Object.entries(d.movies || {}).map(([k, v]) => [+k, v]));
+    state.games = new Map(Object.entries(d.games || {}).map(([k, v]) => [+k, v]));
   } catch { }
 }
 let saveT;
@@ -30,7 +32,7 @@ function localSave() {
   clearTimeout(saveT);
   saveT = setTimeout(() => {
     try {
-      localStorage.setItem(LKEY, JSON.stringify({ shows: Object.fromEntries(state.shows), movies: Object.fromEntries(state.movies) }));
+      localStorage.setItem(LKEY, JSON.stringify({ shows: Object.fromEntries(state.shows), movies: Object.fromEntries(state.movies), games: Object.fromEntries(state.games) }));
     } catch (e) { console.warn("localStorage plein", e); }
   }, 150);
 }
@@ -72,6 +74,13 @@ function subscribeUser(uid) {
     });
     gotM = true; if (gotS) state.ready = true; emit();
   }, err => console.error(err)));
+  unsubs.push(fs.onSnapshot(fs.collection(db, "users", uid, "games"), snap => {
+    snap.docChanges().forEach(c => {
+      if (c.type === "removed") state.games.delete(+c.doc.id);
+      else state.games.set(+c.doc.id, c.doc.data());
+    });
+    state.gamesReady = true; emit();
+  }, err => console.error(err)));
 }
 
 // ═════════════════ Init / Auth ═════════════════
@@ -86,7 +95,7 @@ export async function init() {
   return new Promise(res => {
     let first = true;
     fb.au.onAuthStateChanged(fb.auth, u => {
-      state.shows.clear(); state.movies.clear();
+      state.shows.clear(); state.movies.clear(); state.games.clear(); state.gamesReady = false;
       if (u) {
         state.user = { uid: u.uid, email: u.email };
         state.ready = false;
@@ -149,6 +158,20 @@ export async function deleteMovie(id) {
   return fs.deleteDoc(fs.doc(db, "users", state.user.uid, "movies", String(id)));
 }
 
+export async function saveGame(g) {
+  g = clean({ ...g, updatedAt: Date.now() });
+  state.games.set(g.id, g); emit();
+  if (state.user?.local) return localSave();
+  const { db, fs } = fb;
+  return fs.setDoc(fs.doc(db, "users", state.user.uid, "games", String(g.id)), g);
+}
+export async function deleteGame(id) {
+  state.games.delete(id); emit();
+  if (state.user?.local) return localSave();
+  const { db, fs } = fb;
+  return fs.deleteDoc(fs.doc(db, "users", state.user.uid, "games", String(id)));
+}
+
 // Écriture en masse (import) — lots de 400
 export async function bulk({ shows = [], movies = [] }, onProgress) {
   const now = Date.now();
@@ -188,16 +211,17 @@ export async function removePushSub(id) {
 export function exportJSON() {
   return {
     app: "bobine", version: 1, exportedAt: new Date().toISOString(),
-    shows: [...state.shows.values()], movies: [...state.movies.values()]
+    shows: [...state.shows.values()], movies: [...state.movies.values()], games: [...state.games.values()]
   };
 }
 export async function wipeAll() {
-  const shows = [...state.shows.keys()], movies = [...state.movies.keys()];
-  if (state.user?.local) { state.shows.clear(); state.movies.clear(); emit(); return localSave(); }
+  const shows = [...state.shows.keys()], movies = [...state.movies.keys()], games = [...state.games.keys()];
+  if (state.user?.local) { state.shows.clear(); state.movies.clear(); state.games.clear(); emit(); return localSave(); }
   const { db, fs } = fb;
   const refs = [
     ...shows.map(id => fs.doc(db, "users", state.user.uid, "shows", String(id))),
-    ...movies.map(id => fs.doc(db, "users", state.user.uid, "movies", String(id)))
+    ...movies.map(id => fs.doc(db, "users", state.user.uid, "movies", String(id))),
+    ...games.map(id => fs.doc(db, "users", state.user.uid, "games", String(id)))
   ];
   for (let i = 0; i < refs.length; i += 400) {
     const b = fs.writeBatch(db); refs.slice(i, i + 400).forEach(r => b.delete(r)); await b.commit();

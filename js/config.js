@@ -23,6 +23,10 @@ export const FIREBASE_CONFIG = {
 //    Générée avec : npx web-push generate-vapid-keys
 export const VAPID_PUBLIC_KEY = "BHg7wVb7QbAAHrC4iU9j02tgN2e_JJ6ZbJIW1X9Iq16j4MQpFi7xU_vHPmhP6Mx5oS3fKCFTUnt_BexBgo-xVjI";
 
+// 4) RAWG (jeux vidéo) — https://rawg.io/apidocs → « Get API Key » (gratuit)
+//    Laisse vide si tu ne suis pas de jeux : tu pourras aussi la coller dans Profil.
+export const RAWG_KEY = "";
+
 // Langue / région des contenus TMDB
 export const LANG = "fr-FR";
 export const REGION = "FR";

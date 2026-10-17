@@ -21,14 +21,14 @@ function db() {
   }).catch(() => null);
   return dbp;
 }
-async function idbGet(k) {
+export async function idbGet(k) {
   const d = await db(); if (!d) return null;
   return new Promise(res => {
     const r = d.transaction("kv").objectStore("kv").get(k);
     r.onsuccess = () => res(r.result || null); r.onerror = () => res(null);
   });
 }
-async function idbSet(k, v) {
+export async function idbSet(k, v) {
   const d = await db(); if (!d) return;
   return new Promise(res => {
     const t = d.transaction("kv", "readwrite"); t.objectStore("kv").put(v, k);

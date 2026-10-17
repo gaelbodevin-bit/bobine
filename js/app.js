@@ -3,6 +3,8 @@ import * as tmdb from "./tmdb.js";
 import * as store from "./store.js";
 import * as push from "./push.js";
 import * as imp from "./import-tvtime.js";
+import * as rawg from "./rawg.js";
+import { gimg } from "./rawg.js";
 import { img, airedList, isWatched, progress, watchedCount, seenCount } from "./tmdb.js";
 
 // ═════════════ Utilitaires ═════════════
@@ -34,6 +36,7 @@ const I = {
   eye: svg('<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>'),
   grid: svg('<rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/>'),
   list: svg('<rect x="3.5" y="5" width="6" height="4" rx="1"/><rect x="3.5" y="15" width="6" height="4" rx="1"/><path d="M12.5 7h8M12.5 17h8"/>'),
+  pad: svg('<path d="M7 8h10a4.5 4.5 0 014.4 5.4l-.8 3.6a2.4 2.4 0 01-4.2 1L14.6 16H9.4l-1.8 2a2.4 2.4 0 01-4.2-1l-.8-3.6A4.5 4.5 0 017 8z"/><path d="M8 11v3M6.5 12.5h3"/><circle cx="15.5" cy="12" r=".9" fill="currentColor"/><circle cx="17.3" cy="13.8" r=".9" fill="currentColor"/>'),
   spark: svg('<path d="M12 3l2.2 5.8L20 11l-5.8 2.2L12 19l-2.2-5.8L4 11l5.8-2.2z"/>'),
   ff: svg('<path d="M4 6.5l7.5 5.5L4 17.5zM12.5 6.5L20 12l-7.5 5.5z"/>'),
 };
@@ -136,17 +139,29 @@ store.onChange(st => {
 });
 
 // ═════════════ Navigation ═════════════
-const TABS = [
+const AV_TABS = [
   ["series", "Séries", I.tv], ["movies", "Films", I.film], ["suggest", "Suggestions", I.spark],
   ["upcoming", "À venir", I.cal], ["explore", "Explorer", I.search]
 ];
+const G_TABS = [["games", "Jeux", I.pad], ["gsuggest", "Suggestions", I.spark], ["gupcoming", "À venir", I.cal], ["gexplore", "Explorer", I.search]];
+const TABS = [...AV_TABS, ...G_TABS];
+// Contenus affichés (Profil) et univers actif
+function loadDomains() { try { const d = JSON.parse(localStorage.getItem("bobine:domains") || "null"); if (d && (d.av || d.games)) return d; } catch { } return { av: true, games: true }; }
+ui.domains = loadDomains();
+ui.domain = (() => { try { return localStorage.getItem("bobine:domain") || "av"; } catch { return "av"; } })();
+ui.lastTab = { av: "series", games: "games" };
+const domainOf = tab => G_TABS.some(t => t[0] === tab) ? "games" : "av";
+function fixDomain() { if (!ui.domains[ui.domain]) ui.domain = ui.domains.av ? "av" : "games"; }
+fixDomain();
+const curTabs = () => ui.domain === "games" ? G_TABS : AV_TABS;
 function renderTabs(badge = 0) {
-  $("#tabs").innerHTML = TABS.map(([k, l, ic]) =>
+  $("#tabs").innerHTML = curTabs().map(([k, l, ic]) =>
     `<button data-a="tab" data-v="${k}" class="${ui.tab === k ? "on" : ""}">${ic}${l}</button>`).join("");
 }
 function go(tab) {
   if (tab === ui.tab) { window.scrollTo({ top: 0, behavior: "smooth" }); return; }
-  ui.tab = tab; history.replaceState(history.state, "", "#" + tab);
+  ui.tab = tab; if (tab !== "profile") { ui.domain = domainOf(tab); ui.lastTab[ui.domain] = tab; }
+  history.replaceState(history.state, "", "#" + tab);
   renderView(true); window.scrollTo(0, 0);
 }
 
@@ -154,11 +169,14 @@ function renderView(force) {
   if (ui.mode !== "app") return;
   if (sheets.length && !force) { ui.dirty = true; return; }
   const v = $("#view");
-  ({ series: vSeries, upcoming: vUpcoming, movies: vMovies, suggest: vSuggest, explore: vExplore, profile: vProfile }[ui.tab] || vSeries)(v, force);
+  ({ series: vSeries, upcoming: vUpcoming, movies: vMovies, suggest: vSuggest, explore: vExplore, profile: vProfile,
+     games: vGames, gsuggest: vGSuggest, gupcoming: vGUpcoming, gexplore: vGExplore }[ui.tab] || vSeries)(v, force);
   renderTabs(ui.badge);
 }
 
-const top = (title, sub = "", right = "") =>
+const domainSwitch = () => ui.domains.av && ui.domains.games
+  ? `<div class="dswitch"><button data-a="domain" data-v="av" class="${ui.domain === "av" ? "on" : ""}">${I.film}Films & séries</button><button data-a="domain" data-v="games" class="${ui.domain === "games" ? "on" : ""}">${I.pad}Jeux vidéo</button></div>` : "";
+const top = (title, sub = "", right = "") => domainSwitch() +
   `<div class="top"><div><h1>${title}</h1>${sub ? `<div class="sub">${sub}</div>` : ""}</div>${right}</div>`;
 const profileBtn = `<button class="iconbtn" data-a="tab" data-v="profile" aria-label="Profil">${I.user}</button>`;
 
@@ -500,9 +518,12 @@ function renderResults() {
 function vProfile(v, force) {
   if (!force && $("#pstats")) { $("#pstats").innerHTML = profStats(); $("#pushcard").innerHTML = pushCard(); return; }
   const u = store.data.user;
-  v.innerHTML = top("Profil", u?.email ? esc(u.email) : "Mode local (sans compte)", `<button class="iconbtn" data-a="tab" data-v="series" aria-label="Fermer">${I.x}</button>`) + `
+  v.innerHTML = top("Profil", u?.email ? esc(u.email) : "Mode local (sans compte)", `<button class="iconbtn" data-a="tab" data-v="${ui.lastTab[ui.domain]}" aria-label="Fermer">${I.x}</button>`) + `
   <div class="stats" id="pstats">${profStats()}</div>
   <div class="card" id="pushcard">${pushCard()}</div>
+  <div class="card"><h3>Contenus affichés</h3><p>Décoche ce que tu ne suis pas : le sélecteur du haut disparaît s'il ne reste qu'un univers.</p>
+    <label class="colrow"><span>${I.film.replace("<svg", '<svg style="width:18px;height:18px;vertical-align:-4px;margin-right:8px"')}Films & séries</span><input type="checkbox" class="tgl" data-dom="av" ${ui.domains.av ? "checked" : ""}></label>
+    <label class="colrow"><span>${I.pad.replace("<svg", '<svg style="width:18px;height:18px;vertical-align:-4px;margin-right:8px"')}Jeux vidéo</span><input type="checkbox" class="tgl" data-dom="games" ${ui.domains.games ? "checked" : ""}></label></div>
   <div class="card">${themeCard()}</div>
   <div class="card"><h3>Importer mon historique</h3><p>Export <b>Binge Boxd</b> (le .zip, ou sélectionne tous les .csv du dossier), export RGPD <b>TV Time</b>, ou sauvegarde Bobine (.json).</p>
     <input type="file" id="impfile" accept=".zip,.csv,.json,application/zip,text/csv,application/json" multiple hidden>
@@ -515,9 +536,19 @@ function vProfile(v, force) {
     <input class="field" id="tmdbk" value="${esc(tmdb.getKey())}" autocomplete="off" autocapitalize="off" spellcheck="false">
     <div class="btns" style="margin:0"><button class="btn" data-a="saveKey">Enregistrer</button><button class="btn ghost" data-a="refresh">Vider le cache</button></div></div>
 
+  ${ui.domains.games ? `<div class="card"><h3>Clé RAWG (jeux vidéo)</h3><p>Jaquettes, fiches et sorties des jeux. Clé gratuite sur <a href="https://rawg.io/apidocs" target="_blank" rel="noopener">rawg.io/apidocs</a>.</p>
+    <input class="field" id="rawgk" value="${esc(rawg.getKey())}" placeholder="Clé API RAWG" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <button class="btn" data-a="saveRawg" style="width:100%">Enregistrer</button></div>` : ""}
+
   <div class="btns">${u && !u.local ? `<button class="btn ghost" data-a="logout">Se déconnecter</button>` : ""}<button class="btn ghost danger" data-a="wipe">Tout effacer</button></div>
 `;
   $("#impfile").addEventListener("change", e => runImport([...e.target.files]));
+  v.querySelectorAll("input[data-dom]").forEach(cb => cb.addEventListener("change", () => {
+    const d = { ...ui.domains, [cb.dataset.dom]: cb.checked };
+    if (!d.av && !d.games) { cb.checked = true; return toast("Garde au moins un des deux"); }
+    ui.domains = d; try { localStorage.setItem("bobine:domains", JSON.stringify(d)); } catch { }
+    fixDomain(); renderView(true);
+  }));
 }
 function profStats() {
   const shows = [...store.data.shows.values()];
@@ -532,7 +563,11 @@ function profStats() {
   return `<div class="stat"><b>${shows.length}</b><span>séries suivies</span></div>
     <div class="stat"><b>${eps.toLocaleString("fr-FR")}</b><span>épisodes vus</span></div>
     <div class="stat"><b>${dur(smin)}</b><span>devant des séries</span></div>
-    <div class="stat"><b>${mw.length}</b><span>films vus · ${dur(mmin)}</span></div>`;
+    <div class="stat"><b>${mw.length}</b><span>films vus · ${dur(mmin)}</span></div>` + (ui.domains.games ? (() => {
+    const gs = [...store.data.games.values()];
+    const done = gs.filter(g => g.status === "beaten" || g.status === "completed").length;
+    return `<div class="stat"><b>${gs.filter(g => g.status === "playing").length}</b><span>jeux en cours</span></div><div class="stat"><b>${done}</b><span>jeux terminés · ${gs.filter(g => g.status === "completed").length} à 100 %</span></div>`;
+  })() : "");
 }
 function pushCard() {
   const ps = ui.pushStatus;
@@ -547,6 +582,195 @@ function pushCard() {
   }[ps] || ["…", ""];
   return `<h3>${I.bell.replace("<svg", '<svg style="width:18px;height:18px;vertical-align:-3px;margin-right:6px;color:var(--ac)"')}Notifications : ${label}</h3><p>${txt}</p>
     <div class="btns" style="margin:0">${ps === "off" ? `<button class="btn pri" data-a="pushOn">Activer</button>` : ""}${ps === "on" ? `<button class="btn" data-a="pushTest">Tester</button><button class="btn ghost" data-a="pushOff">Désactiver</button>` : ""}</div>`;
+}
+
+// ═════════════ Jeux vidéo ═════════════
+const G_F = [["playing", "En cours"], ["backlog", "À jouer"], ["wishlist", "Envies"], ["beaten", "Terminés"], ["completed", "100 %"], ["paused", "En pause"], ["abandoned", "Abandonnés"], ["all", "Tous"]];
+const G_LABEL = Object.fromEntries(G_F);
+const G_ICON = { playing: I.play, backlog: I.mark, wishlist: I.star, beaten: I.check, completed: I.spark, paused: I.pause, abandoned: I.stop };
+ui.gameFilter = "playing"; ui.gsug = {}; ui.gq = "";
+const gameD = new Map(), gameLite = new Map();
+function needGame(id) {
+  const k = "g" + id;
+  if (!requested.has(k)) {
+    requested.add(k);
+    (async () => {
+      if (!gameD.has(id)) { const c = await rawg.peek(`/games/${id}`); if (c) { gameD.set(id, c); later(); } }
+      try { gameD.set(id, await rawg.game(id)); later(); } catch (e) { gameErr(e); }
+    })();
+  }
+  return gameD.get(id);
+}
+let gErrShown = 0;
+function gameErr(e) {
+  console.warn(e);
+  if (Date.now() - gErrShown < 8000) return; gErrShown = Date.now();
+  if (e.message === "BAD_RAWG_KEY") toast("Clé RAWG refusée — vérifie-la dans le profil");
+  else if (!navigator.onLine) toast("Hors ligne — affichage du cache");
+}
+const gcover = (url, alt) => url ? `<img src="${gimg(url, 420)}" alt="" loading="lazy" decoding="async">` : `<div class="noimg">${esc(alt)}</div>`;
+const noKey = () => `<div class="card"><h3>${I.pad.replace("<svg", '<svg style="width:20px;height:20px;vertical-align:-4px;margin-right:8px;color:var(--ac)"')}Une clé RAWG pour les jeux</h3>
+  <p>Les jaquettes, fiches et dates de sortie viennent de RAWG. Crée un compte gratuit sur <a href="https://rawg.io/apidocs" target="_blank" rel="noopener">rawg.io/apidocs</a>, clique « Get API Key » et colle la clé ici.</p>
+  <input class="field" id="rawgk" placeholder="Clé API RAWG" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn pri" data-a="saveRawg" style="width:100%">Enregistrer</button></div>`;
+const isNewRelease = g => g.status === "wishlist" && g.released && g.released <= isoToday() && daysFrom(g.released) >= -7;
+
+async function setGame(id, status) {
+  const prev = store.data.games.get(id);
+  let d = gameD.get(id) || gameLite.get(id);
+  if (!d || !d.platforms) { try { d = await rawg.game(id); gameD.set(id, d); } catch (e) { if (!d) throw e; } }
+  const now = Date.now();
+  await store.saveGame({
+    ...(prev || {}), id, name: d.name, background_image: d.background_image || null, released: d.released || null, tba: !!d.tba,
+    genres: d.genres || [], status, addedAt: prev?.addedAt || now, lastAt: now,
+    startedAt: status === "playing" ? (prev?.startedAt || now) : (prev?.startedAt || null),
+    finishedAt: ["beaten", "completed"].includes(status) ? (prev?.finishedAt || now) : (prev?.finishedAt || null)
+  });
+}
+
+function vGames(v) {
+  let h = top("Jeux", "", viewToggle());
+  if (!rawg.getKey()) { v.innerHTML = h + noKey(); return; }
+  const all = [...store.data.games.values()];
+  h += `<div class="chips">${G_F.map(([k, l]) => `<button class="chip ${ui.gameFilter === k ? "on" : ""}" data-a="gfilter" data-v="${k}">${l}</button>`).join("")}</div>`;
+  const list = (ui.gameFilter === "all" ? all : all.filter(g => g.status === ui.gameFilter)).sort((a, b) => (b.lastAt || b.addedAt || 0) - (a.lastAt || a.addedAt || 0));
+  if (!all.length) { v.innerHTML = h + `<div class="empty">${I.pad}<h3>Ludothèque vide</h3><p>Ajoute tes jeux depuis Explorer ou Suggestions.</p><div class="btns"><button class="btn pri" data-a="tab" data-v="gexplore">${I.search}Explorer</button></div></div>`; return; }
+  if (!list.length) { v.innerHTML = h + `<div class="empty">${I.pad}<h3>Rien ici</h3><p>Aucun jeu dans cette catégorie.</p></div>`; return; }
+  if (ui.seriesView === "list") {
+    h += list.map(g => `<button class="li" data-a="game" data-id="${g.id}"><div class="ps">${gcover(g.background_image, g.name)}</div><div class="tx"><div class="n">${esc(g.name)}</div>
+      <div class="d">${esc([g.platform, year(g.released), ui.gameFilter === "all" ? G_LABEL[g.status] : ""].filter(Boolean).join(" · "))}${g.rating ? ` · <span style="color:var(--ac)">${"★".repeat(g.rating)}</span>` : ""}</div></div></button>`).join("");
+  } else {
+    h += `<div class="grid">${list.map(g => { const nw = isNewRelease(g); return `<button class="gp ${nw ? "fresh" : ""}" data-a="game" data-id="${g.id}"><div class="p">${gcover(g.background_image, g.name)}${nw ? `<span class="newb">SORTI !</span>` : ""}${g.rating ? `<span class="badge" style="width:auto;padding:0 6px;border-radius:8px;font-size:11px;font-weight:800">${g.rating}★</span>` : ""}</div><div class="t">${esc(g.name)}</div></button>`; }).join("")}</div>`;
+  }
+  v.innerHTML = h;
+}
+
+const GOTY = [["Clair Obscur: Expedition 33", 2025], ["Astro Bot", 2024], ["Baldur's Gate 3", 2023], ["Elden Ring", 2022], ["It Takes Two", 2021], ["The Last of Us Part II", 2020],
+  ["Sekiro: Shadows Die Twice", 2019], ["God of War", 2018], ["The Legend of Zelda: Breath of the Wild", 2017], ["Overwatch", 2016], ["The Witcher 3: Wild Hunt", 2015], ["Dragon Age: Inquisition", 2014]];
+function gSugDefs() {
+  const y = new Date().getFullYear(), td = isoToday();
+  return [
+    ["goty", "Jeux de l'année", "Lauréats des Game Awards"],
+    ["mc", "Chefs-d'œuvre", "Les mieux notés par la presse", { metacritic: "92,100", ordering: "-metacritic" }],
+    ["recent", "Incontournables récents", "Les meilleurs de ces deux dernières années", { dates: `${y - 2}-01-01,${td}`, metacritic: "82,100", ordering: "-metacritic" }],
+    ["cult", "Cultes", "Les plus joués de tous les temps", { ordering: "-added" }],
+    ["indie", "Pépites indé", "Petits studios, grands jeux", { genres: "indie", metacritic: "84,100", ordering: "-metacritic" }],
+    ["retro", "Rétro à avoir joué", "Les classiques d'avant 2006", { dates: "1985-01-01,2005-12-31", metacritic: "90,100", ordering: "-metacritic" }]
+  ];
+}
+async function loadGSug() {
+  if (ui.gsugLoading) return; ui.gsugLoading = true;
+  await Promise.all(gSugDefs().map(async ([k, , , params]) => {
+    if (ui.gsug[k]) return;
+    try {
+      ui.gsug[k] = k === "goty"
+        ? (await Promise.all(GOTY.map(async ([n, y]) => { const g = await rawg.searchOne(n).catch(() => null); return g ? { ...g, prize: "GOTY " + y } : null; }))).filter(Boolean)
+        : await rawg.list(params, 72);
+      ui.gsug[k].forEach(g => gameLite.set(g.id, g));
+    } catch (e) { gameErr(e); ui.gsug[k] = []; }
+    if (ui.tab === "gsuggest") renderView();
+  }));
+  ui.gsugLoading = false;
+}
+const gRow = items => `<div class="row">${items.map(g => `<button class="pc" data-a="game" data-id="${g.id}"><div class="p">${gcover(g.background_image, g.name)}${store.data.games.has(g.id) ? `<span class="badge">${I.check}</span>` : ""}</div><div class="t">${esc(g.name)}</div><div class="s">${esc(g.prize || [year(g.released), g.metacritic ? "MC " + g.metacritic : ""].filter(Boolean).join(" · "))}</div></button>`).join("")}</div>`;
+const skRow = () => `<div class="row">${Array.from({ length: 5 }, () => `<div class="pc"><div class="p sk"></div></div>`).join("")}</div>`;
+function vGSuggest(v) {
+  let h = top("Suggestions", "Cultes, récompensés, à avoir joué", profileBtn);
+  if (!rawg.getKey()) { v.innerHTML = h + noKey(); return; }
+  loadGSug();
+  for (const [k, title, sub] of gSugDefs()) {
+    const data = ui.gsug[k];
+    h += sec(title) + `<div class="sugsub">${esc(sub)}</div>`;
+    if (!data) { h += skRow(); continue; }
+    const items = data.filter(g => !store.data.games.has(g.id) && g.background_image).slice(0, 20);
+    h += items.length ? gRow(items) : `<div class="sugsub">Tu les as déjà tous 👏</div>`;
+  }
+  v.innerHTML = h;
+}
+
+function vGUpcoming(v) {
+  let h = top("À venir", "Sorties des jeux de ta liste", profileBtn);
+  if (!rawg.getKey()) { v.innerHTML = h + noKey(); return; }
+  const td = isoToday();
+  const mine = [...store.data.games.values()].filter(g => ["wishlist", "backlog"].includes(g.status) && (g.tba || (g.released && g.released >= td)))
+    .sort((a, b) => (a.tba ? "9" : a.released) > (b.tba ? "9" : b.released) ? 1 : -1);
+  if (mine.length) {
+    const groups = new Map();
+    mine.forEach(g => { const k = g.tba || !g.released ? "Date à confirmer" : g.released; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(g); });
+    for (const [date, arr] of groups) {
+      const d = date.length === 10 ? daysFrom(date) : null;
+      h += `<div class="day"><h3>${d === 0 ? "<b>Aujourd'hui</b>" : d === 1 ? "<b>Demain</b>" : esc(d === null ? date : fmtLong(date))}${d > 1 ? ` · <span style="text-transform:none;letter-spacing:0">dans ${d} j</span>` : ""}</h3>${arr.map(g =>
+        `<button class="cal" data-a="game" data-id="${g.id}"><div class="ps">${gcover(g.background_image, g.name)}</div><div class="tx" style="flex:1;min-width:0"><div style="font-weight:650">${esc(g.name)}</div><div style="color:var(--mu);font-size:13px">${esc(G_LABEL[g.status])}</div></div></button>`).join("")}</div>`;
+    }
+  } else h += `<div class="empty" style="padding:24px">${I.cal}<h3>Rien d'annoncé dans ta liste</h3><p>Ajoute des jeux à venir à tes « Envies » : tu seras notifié le jour de leur sortie.</p></div>`;
+  if (!ui.gup) { ui.gup = "loading"; const y = new Date(); const end = new Date(y.getTime() + 365 * DAY).toISOString().slice(0, 10);
+    rawg.list({ dates: `${td},${end}`, ordering: "-added" }, 12).then(r => { ui.gup = r; r.forEach(g => gameLite.set(g.id, g)); if (ui.tab === "gupcoming") renderView(); }).catch(e => { gameErr(e); ui.gup = []; }); }
+  h += sec("Les plus attendus") + (Array.isArray(ui.gup) ? gRow(ui.gup.filter(g => g.background_image).map(g => ({ ...g, prize: g.tba ? "Date à venir" : g.released ? fmtShort(g.released) : "" }))) : skRow());
+  v.innerHTML = h;
+}
+
+let gSearchT, gSeq = 0;
+function vGExplore(v, force) {
+  if (!force && $("#gq")) { renderGResults(); return; }
+  let h = top("Explorer", "", profileBtn);
+  if (!rawg.getKey()) { v.innerHTML = h + noKey(); return; }
+  v.innerHTML = h + `<label class="search">${I.search}<input id="gq" type="search" placeholder="Rechercher un jeu…" autocomplete="off" autocapitalize="off" enterkeyhint="search" value="${esc(ui.gq)}"></label><div id="gresults"></div>`;
+  $("#gq").addEventListener("input", e => { ui.gq = e.target.value; clearTimeout(gSearchT); gSearchT = setTimeout(doGSearch, 350); });
+  $("#gq").addEventListener("keydown", e => { if (e.key === "Enter") { e.target.blur(); clearTimeout(gSearchT); doGSearch(); } });
+  if (ui.gq && !ui.gres) doGSearch(); else renderGResults();
+  if (!ui.gdisc) {
+    ui.gdisc = {}; const td = isoToday(); const from = new Date(Date.now() - 120 * DAY).toISOString().slice(0, 10);
+    Promise.all([rawg.list({ dates: `${from},${td}`, ordering: "-added" }, 12), rawg.list({ ordering: "-rating", metacritic: "80,100", dates: `${new Date().getFullYear() - 1}-01-01,${td}` }, 24)])
+      .then(([a, b]) => { ui.gdisc = { trend: a, top: b }; [...a, ...b].forEach(g => gameLite.set(g.id, g)); renderGResults(); }).catch(gameErr);
+  }
+}
+async function doGSearch() {
+  const q = ui.gq.trim(); const seq = ++gSeq;
+  if (!q) { ui.gres = null; return renderGResults(); }
+  ui.gres = "loading"; renderGResults();
+  try { const r = await rawg.search(q); r.forEach(g => gameLite.set(g.id, g)); if (seq === gSeq) { ui.gres = r; renderGResults(); } }
+  catch (e) { gameErr(e); if (seq === gSeq) { ui.gres = []; renderGResults(); } }
+}
+function renderGResults() {
+  const r = $("#gresults"); if (!r) return;
+  if (ui.gres === "loading") { r.innerHTML = `<div class="empty" style="padding:30px">Recherche…</div>`; return; }
+  if (Array.isArray(ui.gres)) {
+    r.innerHTML = ui.gres.length ? ui.gres.map(g => { const lib = store.data.games.has(g.id); return `<div class="li" data-a="game" data-id="${g.id}"><div class="ps">${gcover(g.background_image, g.name)}</div>
+      <div class="tx"><div class="n">${esc(g.name)}</div><div class="d">${esc([year(g.released) || (g.tba ? "À venir" : ""), g.platforms.slice(0, 3).join(", ")].filter(Boolean).join(" · "))}</div>${g.metacritic ? `<div class="d"><span class="tag">MC ${g.metacritic}</span></div>` : ""}</div>
+      <button class="add ${lib ? "on" : ""}" data-a="gquick" data-id="${g.id}" aria-label="Ajouter">${lib ? I.check : I.plus}</button></div>`; }).join("")
+      : `<div class="empty" style="padding:30px">Aucun jeu pour « ${esc(ui.gq)} »</div>`;
+    return;
+  }
+  const d = ui.gdisc || {};
+  r.innerHTML = !d.trend ? sec("Tendances") + skRow() + sec("Les mieux notés de l'année") + skRow()
+    : sec("Tendances") + gRow(d.trend.filter(g => g.background_image)) + sec("Les mieux notés récemment") + gRow(d.top.filter(g => g.background_image));
+}
+
+function openGame(id) {
+  const sh = openSheet(sh => gameSheet(id, sh));
+  rawg.screenshots(id).then(x => { sh.state.shots = x; sh.refresh(); }).catch(() => { sh.state.shots = []; });
+}
+function gameSheet(id, sh) {
+  const d = needGame(id) || gameLite.get(id); const g = store.data.games.get(id); const st = sh.state;
+  if (!d) return `<div class="hero sk"></div><div class="body"><div class="sk" style="height:28px;width:70%;border-radius:8px"></div></div>`;
+  const hero = d.background_image_additional || d.background_image;
+  const meta = [year(d.released) || (d.tba ? "À venir" : ""), (d.developers || [])[0], d.playtime ? `~${d.playtime} h` : ""].filter(Boolean).map(esc).join(" · ");
+  const plats = d.platformsFull || d.platforms || [];
+  const future = d.tba || (d.released && d.released > isoToday());
+  return `<div class="hero">${hero ? `<img src="${gimg(hero, 1280)}" alt="">` : ""}</div>
+  <div class="hd"><div class="ps">${gcover(d.background_image, d.name)}</div><div><h1>${esc(d.name)}</h1><div class="meta">${meta}</div>
+    <div class="meta" style="margin-top:3px">${d.metacritic ? `<span class="mc ${d.metacritic >= 75 ? "hi" : d.metacritic >= 50 ? "mid" : "lo"}">${d.metacritic}</span> Metacritic` : ""}${d.released && future ? ` · Sortie ${esc(fmtFull(d.released))}` : ""}</div></div></div>
+  <div class="body">
+    <div class="btns">${g ? `<button class="btn pri" data-a="gstatus" data-id="${id}">${G_ICON[g.status] || ""}${esc(G_LABEL[g.status] || "Statut")} ▾</button>`
+      : future ? `<button class="btn pri" data-a="gadd" data-v="wishlist" data-id="${id}">${I.star}Envie</button><button class="btn" data-a="gstatus" data-id="${id}">Autre…</button>`
+      : `<button class="btn pri" data-a="gadd" data-v="backlog" data-id="${id}">${I.plus}À jouer</button><button class="btn" data-a="gadd" data-v="playing" data-id="${id}">${I.play}J'y joue</button><button class="btn" data-a="gstatus" data-id="${id}">${I.more}</button>`}</div>
+    ${g ? `<div style="color:var(--mu);font-size:13px">Ta note :</div><div class="stars">${[1, 2, 3, 4, 5].map(n => `<button data-a="grate" data-id="${id}" data-v="${n}" class="${(g.rating || 0) >= n ? "on" : ""}" aria-label="${n} étoiles">${I.star}</button>`).join("")}</div>` : ""}
+    ${plats.length ? `<div style="color:var(--mu);font-size:13px;margin-top:8px">${g ? "Tu y joues sur :" : "Plateformes"}</div><div class="gen">${plats.map(p => g ? `<button class="pchip ${g.platform === p ? "on" : ""}" data-a="gplat" data-id="${id}" data-v="${esc(p)}">${esc(p)}</button>` : `<span>${esc(p)}</span>`).join("")}</div>` : ""}
+    ${d.genres?.length ? `<div class="gen">${d.genres.map(x => `<span>${esc(x)}</span>`).join("")}</div>` : ""}
+    ${d.description ? `<div class="syn ${st.full ? "" : "clamp"}" data-a="synMore">${esc(d.description)}</div><div class="vo">Description en VO (RAWG)</div>` : !gameD.has(id) ? `<div class="syn sk" style="height:60px;border-radius:8px"></div>` : ""}
+    ${st.shots?.length ? sec("Captures") + `<div class="row shots">${st.shots.map(u => `<img src="${gimg(u, 640)}" alt="" loading="lazy">`).join("")}</div>` : ""}
+    ${(d.publishers || []).length ? `<div class="sugsub" style="margin-top:18px">Éditeur : ${esc(d.publishers.join(", "))}</div>` : ""}
+    <div class="foot">Données <a href="https://rawg.io/games/${id}" target="_blank" rel="noopener">RAWG</a></div>
+  </div>`;
 }
 
 // ═════════════ Apparence ═════════════
@@ -807,6 +1031,32 @@ const A = {
   sfilter: el => { ui.seriesFilter = el.dataset.v; renderView(); },
   mseg: el => { ui.movieSeg = el.dataset.v; renderView(); },
   retryTv: el => { const id = +el.dataset.id; tvErr.delete(id); requested.delete("tv" + id); sheets.at(-1)?.refresh(); },
+  domain: el => {
+    const d = el.dataset.v; if (d === ui.domain && ui.tab !== "profile") return;
+    ui.domain = d; try { localStorage.setItem("bobine:domain", d); } catch { }
+    closeAllSheets(); go(ui.lastTab[d]);
+  },
+  saveRawg() { rawg.setKey($("#rawgk").value); ui.gsug = {}; ui.gdisc = null; toast("Clé RAWG enregistrée"); },
+  gfilter: el => { ui.gameFilter = el.dataset.v; renderView(); },
+  game: el => openGame(+el.dataset.id),
+  async gadd(el) {
+    const id = +el.dataset.id; const st = el.dataset.v;
+    await setGame(id, st); toast(`Ajouté à « ${G_LABEL[st]} »`); if (ui.tab === "gexplore") renderGResults();
+  },
+  async gquick(el, ev) {
+    ev.stopPropagation(); const id = +el.dataset.id;
+    if (store.data.games.has(id)) return openGame(id);
+    const d = gameD.get(id) || gameLite.get(id);
+    const future = d?.tba || (d?.released && d.released > isoToday());
+    await setGame(id, future ? "wishlist" : "backlog"); toast(`Ajouté à « ${G_LABEL[future ? "wishlist" : "backlog"]} »`); renderGResults();
+  },
+  gstatus(el) {
+    const id = +el.dataset.id; const g = store.data.games.get(id);
+    menu(esc(g?.name || "Jeu"), G_F.filter(f => f[0] !== "all").map(([k, l]) => ({ html: G_ICON[k] + l, cur: g?.status === k, fn: () => setGame(id, k) }))
+      .concat(g ? [{ html: I.trash + "Retirer de ma ludothèque", bad: true, fn: () => confirm(`Retirer « ${g.name} » ?`) && store.deleteGame(id) }] : []));
+  },
+  grate(el) { const id = +el.dataset.id, n = +el.dataset.v; const g = store.data.games.get(id); if (g) store.saveGame({ ...g, rating: g.rating === n ? null : n }); },
+  gplat(el) { const id = +el.dataset.id; const g = store.data.games.get(id); if (g) store.saveGame({ ...g, platform: g.platform === el.dataset.v ? null : el.dataset.v }); },
   sview: () => { ui.seriesView = ui.seriesView === "grid" ? "list" : "grid"; try { localStorage.setItem("bobine:sview", ui.seriesView); } catch { } renderView(); },
   sugseg: el => { ui.sugSeg = el.dataset.v; renderView(); window.scrollTo(0, 0); },
   theme: el => { applyTheme({ ...THEMES[el.dataset.v] }, true); renderView(true); },
@@ -925,7 +1175,7 @@ document.addEventListener("click", ev => {
   let x0 = null, y0 = 0, t0 = 0;
   const view = document.getElementById("view");
   view.addEventListener("touchstart", e => {
-    if (sheets.length || !["series", "movies"].includes(ui.tab) || e.touches.length > 1) { x0 = null; return; }
+    if (sheets.length || !["series", "movies", "games"].includes(ui.tab) || e.touches.length > 1) { x0 = null; return; }
     if (e.target.closest(".row, .chips, .cast, input")) { x0 = null; return; }
     x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; t0 = Date.now();
   }, { passive: true });
@@ -934,7 +1184,7 @@ document.addEventListener("click", ev => {
     const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0; x0 = null;
     if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.6 || Date.now() - t0 > 700) return;
     const dir = dx < 0 ? 1 : -1;
-    const [F, key] = ui.tab === "series" ? [SERIES_F, "seriesFilter"] : [MOVIE_F, "movieSeg"];
+    const [F, key] = ui.tab === "series" ? [SERIES_F, "seriesFilter"] : ui.tab === "games" ? [G_F, "gameFilter"] : [MOVIE_F, "movieSeg"];
     const i = F.findIndex(f => f[0] === ui[key]);
     const j = i + dir; if (j < 0 || j >= F.length) return;
     ui[key] = F[j][0];
@@ -1089,7 +1339,8 @@ function startApp() {
   ui.mode = "app";
   $("#tabs").classList.remove("hidden"); $("#view").style.padding = "";
   const h = location.hash.slice(1);
-  if (TABS.some(t => t[0] === h) || h === "profile") ui.tab = h; else ui.tab = "series";
+  if (TABS.some(t => t[0] === h && ui.domains[domainOf(h)]) || h === "profile") ui.tab = h; else ui.tab = ui.lastTab[ui.domain];
+  if (ui.tab !== "profile") ui.domain = domainOf(ui.tab);
   renderView(true);
   push.status().then(s => { ui.pushStatus = s; renderView(); }).catch(() => { });
   push.refresh();
@@ -1117,14 +1368,14 @@ if ("serviceWorker" in navigator) {
   }).catch(e => console.warn("SW", e));
   navigator.serviceWorker.addEventListener("message", e => {
     if (e.data?.type === "open" && e.data.url) {
-      const m = e.data.url.match(/#(tv|mv)-(\d+)/); if (m) (m[1] === "tv" ? openTv : openMovie)(+m[2]);
+      const m = e.data.url.match(/#(tv|mv|gm)-(\d+)/); if (m) ({ tv: openTv, mv: openMovie, gm: openGame })[m[1]](+m[2]);
     }
   });
 }
 // Lien profond depuis une notification (#tv-123 / #mv-456)
 window.addEventListener("load", () => {
-  const m = location.hash.match(/^#(tv|mv)-(\d+)/);
-  if (m) { const id = +m[2]; history.replaceState(null, "", "#series"); const t = setInterval(() => { if (ui.mode === "app") { clearInterval(t); (m[1] === "tv" ? openTv : openMovie)(id); } }, 150); setTimeout(() => clearInterval(t), 10000); }
+  const m = location.hash.match(/^#(tv|mv|gm)-(\d+)/);
+  if (m) { const id = +m[2]; history.replaceState(null, "", "#series"); const t = setInterval(() => { if (ui.mode === "app") { clearInterval(t); ({ tv: openTv, mv: openMovie, gm: openGame })[m[1]](id); } }, 150); setTimeout(() => clearInterval(t), 10000); }
 });
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && ui.mode === "app") { requested.clear(); later(); } });
 
