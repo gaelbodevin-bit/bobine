@@ -1,8 +1,8 @@
 // Bobine — service worker : cache hors-ligne + notifications push
-const VERSION = "bobine-v10";
+const VERSION = "bobine-v11";
 const SHELL = [
   "./", "./index.html", "./manifest.webmanifest", "./css/app.css",
-  "./js/app.js", "./js/config.js", "./js/tmdb.js", "./js/store.js", "./js/push.js", "./js/import-tvtime.js",
+  "./js/app.js", "./js/config.js", "./js/tmdb.js", "./js/store.js", "./js/push.js", "./js/import-tvtime.js", "./js/rawg.js",
   "./icons/icon-192.png", "./icons/icon-512.png", "./icons/apple-touch-icon.png"
 ];
 const IMG_CACHE = "bobine-img";
