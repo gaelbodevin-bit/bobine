@@ -32,6 +32,7 @@ const I = {
   stop: svg('<rect x="6.5" y="6.5" width="11" height="11" rx="1.5"/>'),
   trash: svg('<path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13"/>'),
   eye: svg('<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>'),
+  spark: svg('<path d="M12 3l2.2 5.8L20 11l-5.8 2.2L12 19l-2.2-5.8L4 11l5.8-2.2z"/>'),
   ff: svg('<path d="M4 6.5l7.5 5.5L4 17.5zM12.5 6.5L20 12l-7.5 5.5z"/>'),
 };
 
@@ -65,7 +66,7 @@ const pimg = (path, alt, size = "w342") => path
   : `<div class="noimg">${esc(alt)}</div>`;
 
 // ═════════════ État UI + caches de détails ═════════════
-const ui = { tab: "upnext", seriesFilter: "all", movieSeg: "watched", q: "", pushStatus: null, mode: null };
+const ui = { tab: "series", seriesFilter: "watching", sugSeg: "movie", sug: {}, movieSeg: "watched", q: "", pushStatus: null, mode: null };
 const details = new Map();   // tv id -> détail allégé
 const seasons = new Map();   // "id:n" -> saison
 const movieD = new Map();    // movie id -> détail
@@ -131,12 +132,12 @@ store.onChange(st => {
 
 // ═════════════ Navigation ═════════════
 const TABS = [
-  ["upnext", "À voir", I.play], ["upcoming", "À venir", I.cal], ["series", "Séries", I.tv],
-  ["movies", "Films", I.film], ["explore", "Explorer", I.search]
+  ["series", "Séries", I.tv], ["upcoming", "À venir", I.cal], ["movies", "Films", I.film],
+  ["suggest", "Suggestions", I.spark], ["explore", "Explorer", I.search]
 ];
 function renderTabs(badge = 0) {
   $("#tabs").innerHTML = TABS.map(([k, l, ic]) =>
-    `<button data-a="tab" data-v="${k}" class="${ui.tab === k ? "on" : ""}">${ic}${l}${k === "upnext" && badge ? `<span class="dot">${badge > 99 ? "99+" : badge}</span>` : ""}</button>`).join("");
+    `<button data-a="tab" data-v="${k}" class="${ui.tab === k ? "on" : ""}">${ic}${l}${k === "series" && badge ? `<span class="dot">${badge > 99 ? "99+" : badge}</span>` : ""}</button>`).join("");
 }
 function go(tab) {
   if (tab === ui.tab) { window.scrollTo({ top: 0, behavior: "smooth" }); return; }
@@ -148,7 +149,7 @@ function renderView(force) {
   if (ui.mode !== "app") return;
   if (sheets.length && !force) { ui.dirty = true; return; }
   const v = $("#view");
-  ({ upnext: vUpNext, upcoming: vUpcoming, series: vSeries, movies: vMovies, explore: vExplore, profile: vProfile }[ui.tab] || vUpNext)(v, force);
+  ({ series: vSeries, upcoming: vUpcoming, movies: vMovies, suggest: vSuggest, explore: vExplore, profile: vProfile }[ui.tab] || vSeries)(v, force);
   renderTabs(ui.badge);
 }
 
@@ -172,41 +173,17 @@ function classify() {
   return out;
 }
 
-function vUpNext(v) {
-  const shows = store.data.shows;
-  if (!store.data.ready) { v.innerHTML = top("À voir", "", profileBtn) + skel(); return; }
-  if (!shows.size) {
-    v.innerHTML = top("À voir", "", profileBtn) + banners() + `
-      <div class="empty">${I.tv}<h3>Aucune série suivie</h3><p>Ajoute tes séries depuis Explorer, ou récupère ton historique TV Time.</p>
-      <div class="btns"><button class="btn pri" data-a="tab" data-v="explore">${I.search}Explorer</button><button class="btn" data-a="tab" data-v="profile">${I.up}Importer</button></div></div>`;
-    ui.badge = 0; push.setBadge(0); return;
-  }
-  const c = classify();
+const nSeasons = t => t ? ((t.seasons || []).filter(x => x.season_number > 0 && x.episode_count).length || t.number_of_seasons || 0) : 0;
+
+// Liste "En cours" : prochain épisode de chaque série, la dernière regardée en haut
+function upNextItems(c) {
   const nowISO = isoToday();
-  const items = c.watching.map(x => {
+  return c.watching.map(x => {
     const ep = x.p?.next ? epOf(x.s.id, x.p.next.s, x.p.next.e) : null;
     const air = ep?.air_date || (x.p?.next && x.t?.last_episode_to_air && x.t.last_episode_to_air.season_number === x.p.next.s && x.t.last_episode_to_air.episode_number === x.p.next.e ? x.t.last_episode_to_air.air_date : null);
     const fresh = !!(air && daysFrom(air) >= -7 && air <= nowISO);
     return { ...x, ep, air, fresh };
-  }).sort((a, b) => (b.fresh - a.fresh) || (b.fresh && a.fresh ? (b.air > a.air ? 1 : -1) : 0) || ((b.s.lastWatchedAt || 0) - (a.s.lastWatchedAt || 0)));
-
-  const badge = items.filter(x => x.fresh).length;
-  ui.badge = badge; push.setBadge(badge);
-
-  const totalLeft = items.reduce((n, x) => n + (x.p?.remaining || 0), 0);
-  let h = top("À voir", items.length ? `${plural(totalLeft, "épisode")} en attente` : "Tout est à jour ✨", profileBtn) + banners();
-
-  if (items.length) h += items.map(upCard).join("");
-  else h += `<div class="empty" style="padding:24px">${I.check}<h3>À jour !</h3><p>Rien à rattraper pour l'instant.</p></div>`;
-
-  if (c.waiting.length) {
-    const w = c.waiting.sort((a, b) => (a.t.next_episode_to_air?.air_date || "9") > (b.t.next_episode_to_air?.air_date || "9") ? 1 : -1);
-    h += sec("En attente du prochain épisode", w.length) + `<div class="row">${w.map(x => poster(x.s, x.t, x.t.next_episode_to_air ? `${SE(x.t.next_episode_to_air.season_number, x.t.next_episode_to_air.episode_number)} · ${rel(x.t.next_episode_to_air.air_date)}` : "Date inconnue")).join("")}</div>`;
-  }
-  if (c.later.length) h += sec("À voir plus tard", c.later.length) + `<div class="row">${c.later.map(x => poster(x.s, x.t, year(x.t?.first_air_date))).join("")}</div>`;
-  if (c.finished.length) h += sec("Terminées", c.finished.length) + `<div class="row">${c.finished.map(x => poster(x.s, x.t, "Vue en entier", true)).join("")}</div>`;
-  if (c.stopped.length) h += sec("Arrêtées", c.stopped.length) + `<div class="row">${c.stopped.map(x => poster(x.s, x.t, x.t ? `${watchedCount(x.s)}/${airedList(x.t).length} ép.` : "")).join("")}</div>`;
-  v.innerHTML = h;
+  }).sort((a, b) => ((b.s.lastWatchedAt || b.s.addedAt || 0) - (a.s.lastWatchedAt || a.s.addedAt || 0)));
 }
 const sec = (t, n) => `<div class="sec"><h2>${t}</h2>${n !== undefined ? `<span class="c">${n}</span>` : ""}</div>`;
 const skel = () => Array.from({ length: 4 }, () => `<div class="up"><div class="th sk"></div><div class="tx"><div class="sk" style="height:14px;width:60%;border-radius:6px"></div><div class="sk" style="height:12px;width:40%;border-radius:6px;margin-top:8px"></div></div></div>`).join("");
@@ -221,7 +198,7 @@ function upCard(x) {
   return `<div class="up" data-a="ep" data-id="${s.id}" data-s="${n.s}" data-e="${n.e}">
     <div class="th">${still ? `<img src="${still}" alt="" loading="lazy">` : ""}${fresh ? `<span class="new">NOUVEAU</span>` : ""}</div>
     <div class="tx"><div class="n">${name}</div><div class="e">${SE(n.s, n.e)}${ep?.name ? " · " + esc(ep.name) : ""}</div><div class="m">${meta}</div>
-    <div class="bar"><i style="width:${p.aired ? Math.round(p.watched / p.aired * 100) : 0}%"></i></div></div>
+    <div class="prow"><div class="bar"><i style="width:${p.aired ? Math.round(p.watched / p.aired * 100) : 0}%"></i></div><small>${p.watched}/${p.aired} ép. · ${plural(nSeasons(t), "saison")}</small></div></div>
     <button class="chk" data-a="watchNext" data-id="${s.id}" data-s="${n.s}" data-e="${n.e}" aria-label="Marquer comme vu">${I.check}</button>
   </div>`;
 }
@@ -300,19 +277,117 @@ function calRow(x, past) {
 
 // ═════════════ Vue : Séries ═════════════
 function vSeries(v) {
+  if (!store.data.ready) { v.innerHTML = top("Séries", "", profileBtn) + skel(); return; }
+  const shows = store.data.shows;
+  if (!shows.size) {
+    v.innerHTML = top("Séries", "", profileBtn) + banners() + `
+      <div class="empty">${I.tv}<h3>Aucune série suivie</h3><p>Ajoute tes séries depuis Explorer ou Suggestions, ou importe ton historique.</p>
+      <div class="btns"><button class="btn pri" data-a="tab" data-v="explore">${I.search}Explorer</button><button class="btn" data-a="tab" data-v="profile">${I.up}Importer</button></div></div>`;
+    ui.badge = 0; push.setBadge(0); return;
+  }
   const c = classify();
-  const F = [["all", "Toutes"], ["watching", "En cours"], ["waiting", "À jour"], ["later", "Plus tard"], ["finished", "Terminées"], ["stopped", "Arrêtées"]];
+  const items = upNextItems(c);
+  ui.badge = items.filter(x => x.fresh).length; push.setBadge(ui.badge);
+  const F = [["watching", "En cours"], ["waiting", "À jour"], ["later", "Plus tard"], ["finished", "Terminées"], ["stopped", "Arrêtées"], ["all", "Toutes"]];
+  const eps = [...shows.values()].reduce((n, s) => n + watchedCount(s), 0);
+  let h = top("Séries", `${plural(shows.size, "série")} · ${plural(eps, "épisode")} vus`, profileBtn) + banners();
+  h += `<div class="chips">${F.map(([k, l]) => `<button class="chip ${ui.seriesFilter === k ? "on" : ""}" data-a="sfilter" data-v="${k}">${l} ${k === "all" ? shows.size : (c[k] || []).length}</button>`).join("")}</div>`;
+
+  if (ui.seriesFilter === "watching") {
+    const left = items.reduce((n, x) => n + (x.p?.remaining || 0), 0);
+    h += items.length ? `<div class="sugsub">${plural(left, "épisode")} à rattraper · la dernière série regardée en haut</div>` + items.map(upCard).join("")
+      : `<div class="empty" style="padding:24px">${I.check}<h3>À jour !</h3><p>Rien à rattraper pour l'instant.</p></div>`;
+    v.innerHTML = h; return;
+  }
   const all = [...c.watching, ...c.waiting, ...c.later, ...c.finished, ...c.stopped];
   const list = (ui.seriesFilter === "all" ? all : c[ui.seriesFilter] || [])
     .sort((a, b) => (b.s.lastWatchedAt || b.s.addedAt || 0) - (a.s.lastWatchedAt || a.s.addedAt || 0));
-  const eps = [...store.data.shows.values()].reduce((n, s) => n + watchedCount(s), 0);
-  let h = top("Séries", `${plural(store.data.shows.size, "série")} · ${plural(eps, "épisode")} vus`, profileBtn);
-  h += `<div class="chips">${F.map(([k, l]) => `<button class="chip ${ui.seriesFilter === k ? "on" : ""}" data-a="sfilter" data-v="${k}">${l}${k !== "all" ? ` ${(c[k] || []).length}` : ""}</button>`).join("")}</div>`;
   h += list.length ? `<div class="grid">${list.map(x => {
     const p = x.t ? progress(x.s, x.t) : null;
     const pct = p?.aired ? Math.round(p.watched / p.aired * 100) : 0;
-    return `<button class="gp" data-a="tv" data-id="${x.s.id}"><div class="p">${pimg(x.t?.poster_path || x.s.poster_path, x.t?.name || x.s.name)}${pct === 100 ? `<span class="badge">${I.check}</span>` : ""}${pct && pct < 100 ? `<div class="pbar"><i style="width:${pct}%"></i></div>` : ""}</div><div class="t">${esc(x.t?.name || x.s.name)}</div><div class="s">${p ? `${p.watched}/${p.aired}` : ""}</div></button>`;
+    const sub = ui.seriesFilter === "waiting" && x.t?.next_episode_to_air ? `${SE(x.t.next_episode_to_air.season_number, x.t.next_episode_to_air.episode_number)} · ${rel(x.t.next_episode_to_air.air_date)}`
+      : p ? `${p.watched}/${p.aired} ép. · ${plural(nSeasons(x.t), "saison")}` : "";
+    return `<button class="gp" data-a="tv" data-id="${x.s.id}"><div class="p">${pimg(x.t?.poster_path || x.s.poster_path, x.t?.name || x.s.name)}${pct === 100 ? `<span class="badge">${I.check}</span>` : ""}${pct && pct < 100 ? `<div class="pbar"><i style="width:${pct}%"></i></div>` : ""}</div><div class="t">${esc(x.t?.name || x.s.name)}</div><div class="s">${esc(sub)}</div></button>`;
   }).join("")}</div>` : `<div class="empty">${I.tv}<h3>Rien ici</h3><p>Aucune série dans cette catégorie.</p></div>`;
+  v.innerHTML = h;
+}
+
+// ═════════════ Vue : Suggestions ═════════════
+// Palmarès sélectionnés (titre original + année de sortie) — résolus via la recherche TMDB
+const AWARDS = {
+  movie: [
+    ["Anora", 2024, "Oscar + Palme d'or"], ["Oppenheimer", 2023, "Oscar"], ["Anatomie d'une chute", 2023, "Palme d'or"],
+    ["Everything Everywhere All at Once", 2022, "Oscar"], ["Triangle of Sadness", 2022, "Palme d'or"], ["Titane", 2021, "Palme d'or"],
+    ["CODA", 2021, "Oscar"], ["Nomadland", 2020, "Oscar"], ["Parasite", 2019, "Oscar + Palme d'or"], ["Green Book", 2018, "Oscar"],
+    ["Shoplifters", 2018, "Palme d'or"], ["The Shape of Water", 2017, "Oscar"], ["Moonlight", 2016, "Oscar"], ["I, Daniel Blake", 2016, "Palme d'or"],
+    ["Spotlight", 2015, "Oscar"], ["Birdman", 2014, "Oscar"], ["12 Years a Slave", 2013, "Oscar"], ["La Vie d'Adèle", 2013, "Palme d'or"],
+    ["Amour", 2012, "Palme d'or"], ["The Artist", 2011, "Oscar"], ["The Tree of Life", 2011, "Palme d'or"], ["The King's Speech", 2010, "Oscar"],
+    ["No Country for Old Men", 2007, "Oscar"], ["The Departed", 2006, "Oscar"], ["The Lord of the Rings: The Return of the King", 2003, "Oscar"],
+    ["Gladiator", 2000, "Oscar"], ["Pulp Fiction", 1994, "Palme d'or"], ["Forrest Gump", 1994, "Oscar"], ["Schindler's List", 1993, "Oscar"],
+    ["The Silence of the Lambs", 1991, "Oscar"], ["Apocalypse Now", 1979, "Palme d'or"], ["Taxi Driver", 1976, "Palme d'or"], ["The Godfather", 1972, "Oscar"]
+  ],
+  tv: [
+    ["Shōgun", 2024, "Emmy meilleure série"], ["The Bear", 2022, "Emmy comédie"], ["Succession", 2018, "Emmy meilleure série"],
+    ["Ted Lasso", 2020, "Emmy comédie"], ["The Crown", 2016, "Emmy meilleure série"], ["Fleabag", 2016, "Emmy comédie"],
+    ["Chernobyl", 2019, "Emmy mini-série"], ["Game of Thrones", 2011, "Emmy meilleure série"], ["Breaking Bad", 2008, "Emmy meilleure série"],
+    ["Mad Men", 2007, "Emmy meilleure série"], ["The Sopranos", 1999, "Emmy meilleure série"], ["The West Wing", 1999, "Emmy meilleure série"],
+    ["Band of Brothers", 2001, "Emmy mini-série"], ["The Queen's Gambit", 2020, "Emmy mini-série"], ["Beef", 2023, "Emmy mini-série"],
+    ["Schitt's Creek", 2015, "Emmy comédie"], ["Veep", 2012, "Emmy comédie"], ["Modern Family", 2009, "Emmy comédie"]
+  ]
+};
+const SUG = {
+  movie: [
+    ["awards", "Récompensés", "Oscars du meilleur film et Palmes d'or"],
+    ["/movie/top_rated", "Les incontournables", "Les mieux notés de tous les temps"],
+    ["/discover/movie|primary_release_date.lte=1989-12-31&sort_by=vote_count.desc&vote_average.gte=7.4", "Classiques à avoir vus", "Les grands films d'avant 1990"],
+    ["/discover/movie|sort_by=vote_average.desc&vote_count.gte=400&vote_count.lte=4000&vote_average.gte=7.6&without_original_language=en", "Pépites cinéphiles", "Cinéma d'auteur et international, moins connu"],
+    ["/discover/movie|with_original_language=fr&sort_by=vote_count.desc&vote_average.gte=7.2", "Cinéma français culte", ""]
+  ],
+  tv: [
+    ["awards", "Récompensées", "Emmy Awards"],
+    ["/tv/top_rated", "Séries cultes", "Les mieux notées de tous les temps"],
+    ["/discover/tv|sort_by=vote_count.desc&vote_average.gte=8", "Incontournables", "Celles qu'il faut avoir vues"],
+    ["/discover/tv|with_type=2&sort_by=vote_count.desc&vote_average.gte=7.5", "Mini-séries", "Une saison, une histoire complète"],
+    ["/discover/tv|sort_by=vote_average.desc&vote_count.gte=200&vote_count.lte=3000&vote_average.gte=8&without_original_language=en", "Pépites", "Séries internationales à découvrir"]
+  ]
+};
+async function loadSug(type) {
+  if (ui.sug[type]) return;
+  ui.sug[type] = {};
+  await Promise.all(SUG[type].map(async ([src]) => {
+    try {
+      let items;
+      if (src === "awards") {
+        items = (await Promise.all(AWARDS[type].map(async ([t, y, prize]) => {
+          const r = type === "movie" ? await tmdb.searchMovie(t, y) : await tmdb.searchTv(t, y);
+          return r[0] ? { ...r[0], media_type: type, prize } : null;
+        }))).filter(Boolean);
+      } else {
+        const [path, qs] = src.split("|");
+        const params = Object.fromEntries(new URLSearchParams(qs || ""));
+        const pages = await Promise.all([1, 2].map(page => tmdb.get(path, { ...params, page }, { ttl: 72 })));
+        items = pages.flatMap(p => p.results || []).map(x => ({ ...x, media_type: type }));
+      }
+      ui.sug[type][src] = items;
+    } catch (e) { onErr(e); ui.sug[type][src] = []; }
+    if (ui.tab === "suggest") renderView();
+  }));
+}
+function vSuggest(v) {
+  const type = ui.sugSeg;
+  loadSug(type);
+  const lib = type === "movie" ? store.data.movies : store.data.shows;
+  let h = top("Suggestions", "Cultes, récompensés, à avoir vus", profileBtn);
+  h += `<div class="seg"><button data-a="sugseg" data-v="movie" class="${type === "movie" ? "on" : ""}">Films</button><button data-a="sugseg" data-v="tv" class="${type === "tv" ? "on" : ""}">Séries</button></div>`;
+  for (const [src, title, sub] of SUG[type]) {
+    const data = ui.sug[type]?.[src];
+    h += sec(title) + (sub ? `<div class="sugsub">${esc(sub)}</div>` : "");
+    if (!data) { h += `<div class="row">${Array.from({ length: 5 }, () => `<div class="pc"><div class="p sk"></div></div>`).join("")}</div>`; continue; }
+    const seen = new Set();
+    const items = data.filter(x => !lib.has(x.id) && !seen.has(x.id) && seen.add(x.id) && x.poster_path).slice(0, 20);
+    h += items.length ? `<div class="row">${items.map(x => `<button class="pc" data-a="${type === "tv" ? "tv" : "mv"}" data-id="${x.id}"><div class="p">${pimg(x.poster_path, x.title || x.name)}</div><div class="t">${esc(x.title || x.name)}</div><div class="s">${esc(x.prize || year(x.release_date || x.first_air_date))}${x.vote_average && !x.prize ? ` · ★ ${x.vote_average.toFixed(1)}` : ""}</div></button>`).join("")}</div>`
+      : `<div class="sugsub">Tu as déjà tout vu dans cette liste 👏</div>`;
+  }
   v.innerHTML = h;
 }
 
@@ -331,7 +406,7 @@ function vMovies(v) {
     watched.forEach(m => { const k = m.watchedAt ? new Date(m.watchedAt).toLocaleDateString("fr-FR", { month: "long", year: "numeric" }) : "Date inconnue"; if (!byMonth.has(k)) byMonth.set(k, []); byMonth.get(k).push(m); });
     for (const [k, arr] of byMonth) h += sec(k.charAt(0).toUpperCase() + k.slice(1), arr.length) + `<div class="grid">${arr.map(m => cell(m, year(m.release_date))).join("")}</div>`;
   } else {
-    if (!wl.length) h += `<div class="empty">${I.mark}<h3>Liste vide</h3><p>Ajoute des films à voir : tu seras notifié à leur sortie.</p></div>`;
+    if (!wl.length) h += `<div class="empty">${I.mark}<h3>Liste vide</h3><p>Ajoute des films à voir (Suggestions ou Explorer) : tu seras notifié à leur sortie.</p></div>`;
     else h += `<div class="grid">${wl.map(m => {
       const d = needMovie(m.id); const rf = d?.release_fr || {}; const nd = [rf.theatrical, rf.digital, m.release_date].filter(Boolean).find(x => x >= isoToday());
       return cell(m, nd ? "Sortie " + fmtShort(nd) : year(m.release_date));
@@ -390,9 +465,10 @@ function renderResults() {
 function vProfile(v, force) {
   if (!force && $("#pstats")) { $("#pstats").innerHTML = profStats(); $("#pushcard").innerHTML = pushCard(); return; }
   const u = store.data.user;
-  v.innerHTML = top("Profil", u?.email ? esc(u.email) : "Mode local (sans compte)", `<button class="iconbtn" data-a="tab" data-v="upnext" aria-label="Fermer">${I.x}</button>`) + `
+  v.innerHTML = top("Profil", u?.email ? esc(u.email) : "Mode local (sans compte)", `<button class="iconbtn" data-a="tab" data-v="series" aria-label="Fermer">${I.x}</button>`) + `
   <div class="stats" id="pstats">${profStats()}</div>
   <div class="card" id="pushcard">${pushCard()}</div>
+  <div class="card">${themeCard()}</div>
   <div class="card"><h3>Importer mon historique</h3><p>Export <b>Binge Boxd</b> (le .zip, ou sélectionne tous les .csv du dossier), export RGPD <b>TV Time</b>, ou sauvegarde Bobine (.json).</p>
     <input type="file" id="impfile" accept=".zip,.csv,.json,application/zip,text/csv,application/json" multiple hidden>
     <button class="btn pri" data-a="impPick" style="width:100%">${I.up}Choisir le fichier</button><div id="impzone"></div></div>
@@ -437,6 +513,57 @@ function pushCard() {
   return `<h3>${I.bell.replace("<svg", '<svg style="width:18px;height:18px;vertical-align:-3px;margin-right:6px;color:var(--ac)"')}Notifications : ${label}</h3><p>${txt}</p>
     <div class="btns" style="margin:0">${ps === "off" ? `<button class="btn pri" data-a="pushOn">Activer</button>` : ""}${ps === "on" ? `<button class="btn" data-a="pushTest">Tester</button><button class="btn ghost" data-a="pushOff">Désactiver</button>` : ""}</div>`;
 }
+
+// ═════════════ Apparence ═════════════
+const THEMES = {
+  nuit: { name: "Nuit", bg: "#0d0d11", band: "#16161c", ac: "#ffc83d" },
+  ardoise: { name: "Ardoise", bg: "#11161d", band: "#1a2230", ac: "#5ec8ff" },
+  bordeaux: { name: "Bordeaux", bg: "#140a0d", band: "#24121a", ac: "#ff6b81" },
+  foret: { name: "Forêt", bg: "#0b130f", band: "#13221a", ac: "#5fe0a0" },
+  violet: { name: "Violet", bg: "#100c18", band: "#1d1630", ac: "#b48cff" },
+  noir: { name: "OLED", bg: "#000000", band: "#111111", ac: "#ffffff" },
+  clair: { name: "Clair", bg: "#f4f2ee", band: "#ffffff", ac: "#d9480f" }
+};
+const hex2rgb = h => { h = h.replace("#", ""); return [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16)); };
+const rgb2hex = a => "#" + a.map(x => Math.max(0, Math.min(255, Math.round(x))).toString(16).padStart(2, "0")).join("");
+const mix = (a, b, t) => rgb2hex(hex2rgb(a).map((x, i) => x + (hex2rgb(b)[i] - x) * t));
+const lum = h => { const [r, g, b] = hex2rgb(h).map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }); return .2126 * r + .7152 * g + .0722 * b; };
+function getTheme() { try { return JSON.parse(localStorage.getItem("bobine:theme") || "null"); } catch { return null; } }
+function applyTheme(t, save) {
+  const r = document.documentElement.style;
+  if (save) { try { t ? localStorage.setItem("bobine:theme", JSON.stringify(t)) : localStorage.removeItem("bobine:theme"); } catch { } }
+  if (!t) { ["--bg", "--s1", "--s2", "--s3", "--bar", "--line", "--tx", "--mu", "--mu2", "--ac", "--ac-tx"].forEach(k => r.removeProperty(k)); document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#0d0d11"); return; }
+  const light = lum(t.bg) > .4;
+  const ink = light ? "#111111" : "#ffffff";
+  r.setProperty("--bg", t.bg);
+  r.setProperty("--s1", t.band);
+  r.setProperty("--s2", mix(t.band, ink, light ? .06 : .06));
+  r.setProperty("--s3", mix(t.band, ink, light ? .14 : .13));
+  r.setProperty("--bar", t.band + "eb");
+  r.setProperty("--line", light ? "#0000001a" : "#ffffff14");
+  r.setProperty("--tx", light ? "#16161a" : "#f3f3f6");
+  r.setProperty("--mu", light ? "#5d5d68" : "#9b9bab");
+  r.setProperty("--mu2", light ? "#85858f" : "#6d6d7c");
+  r.setProperty("--ac", t.ac);
+  r.setProperty("--ac-tx", lum(t.ac) > .45 ? "#1a1400" : "#ffffff");
+  document.documentElement.style.colorScheme = light ? "light" : "dark";
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", t.bg);
+}
+function themeCard() {
+  const cur = getTheme() || THEMES.nuit;
+  const sw = Object.entries(THEMES).map(([k, t]) => `<button class="swatch ${cur.bg === t.bg && cur.band === t.band && cur.ac === t.ac ? "on" : ""}" data-a="theme" data-v="${k}" title="${t.name}" style="background:${t.bg}"><i style="background:${t.band};border-top:3px solid ${t.ac}"></i></button>`).join("");
+  return `<h3>Apparence</h3><p>Choisis un thème ou règle tes couleurs.</p><div class="swatches">${sw}</div>
+    <label class="colrow"><span>Fond</span><input type="color" data-c="bg" value="${cur.bg}"></label>
+    <label class="colrow"><span>Bandeaux et cartes</span><input type="color" data-c="band" value="${cur.band}"></label>
+    <label class="colrow"><span>Couleur d'accent</span><input type="color" data-c="ac" value="${cur.ac}"></label>
+    <button class="btn ghost" data-a="themeReset" style="width:100%;margin-top:10px">Thème par défaut</button>`;
+}
+document.addEventListener("input", e => {
+  const k = e.target?.dataset?.c; if (!k) return;
+  const t = { ...(getTheme() || THEMES.nuit) }; t[k] = e.target.value; delete t.name;
+  applyTheme(t, true);
+});
+applyTheme(getTheme());
 
 // ═════════════ Feuilles (fiches) ═════════════
 const sheets = [];
@@ -483,7 +610,6 @@ function swipeToClose(el) {
 // ── Fiche série ──
 function openTv(id) {
   const sh = openSheet(sh => tvSheet(id, sh));
-  tmdb.providers("tv", id).then(p => { sh.state.prov = p || false; sh.refresh(); }).catch(() => { });
 }
 function tvSheet(id, sh) {
   const t = needTv(id); const s = store.data.shows.get(id); const st = sh.state;
@@ -504,12 +630,11 @@ function tvSheet(id, sh) {
       ? `<button class="btn" data-a="showMenu" data-id="${id}">${s.status === "later" ? I.mark : s.status === "stopped" ? I.stop : I.play}${SHOW_ST[s.status] || "En cours"} ▾</button>`
       : `<button class="btn pri" data-a="follow" data-id="${id}">${I.plus}Suivre</button><button class="btn" data-a="followLater" data-id="${id}">${I.mark}Plus tard</button>`}
   ${p.next ? `<button class="btn ${s ? "pri" : ""}" data-a="watchNext" data-id="${id}" data-s="${p.next.s}" data-e="${p.next.e}">${I.check}${SE(p.next.s, p.next.e)}</button>` : ""}</div>
-  ${p.aired ? `<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--mu)"><span>${p.watched} / ${plural(p.aired, "épisode")} vus</span><span>${Math.round(p.watched / p.aired * 100)} %</span></div><div class="bar" style="height:6px"><i style="width:${p.watched / p.aired * 100}%"></i></div>` : ""}
+  ${p.aired ? `<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--mu)"><span>${p.watched} / ${plural(p.aired, "épisode")} vus · ${plural(nSeasons(t), "saison")}</span><span>${Math.round(p.watched / p.aired * 100)} %</span></div><div class="bar" style="height:6px"><i style="width:${p.watched / p.aired * 100}%"></i></div>` : ""}
   ${nx ? `<div class="info">${I.clock}<div>Prochain épisode : <b>${SE(nx.season_number, nx.episode_number)}</b>${nx.air_date ? ` — ${esc(fmtLong(nx.air_date))}` : ""}</div></div>` : ""}
   ${t.genres.length ? `<div class="gen">${t.genres.map(g => `<span>${esc(g)}</span>`).join("")}</div>` : ""}
   ${t.tagline ? `<div style="font-style:italic;color:var(--mu);margin-top:6px">${esc(t.tagline)}</div>` : ""}
   ${syn ? `<div class="syn ${st.full ? "" : "clamp"}" data-a="synMore">${esc(syn)}</div>${!t.overview ? `<div class="vo">Synopsis en VO (pas de traduction française)</div>` : ""}` : st.en === null ? `<div class="syn sk" style="height:60px;border-radius:8px"></div>` : ""}
-  ${provHtml(st.prov)}
   ${sec("Saisons")}`;
 
   const lastAired = t.last_episode_to_air;
@@ -575,7 +700,6 @@ function epSheet(id, s, e, sh) {
 // ── Fiche film ──
 function openMovie(id) {
   const sh = openSheet(sh => mvSheet(id, sh));
-  tmdb.providers("movie", id).then(p => { sh.state.prov = p || false; sh.refresh(); }).catch(() => { });
 }
 function mvSheet(id, sh) {
   const d = needMovie(id); const m = store.data.movies.get(id); const st = sh.state;
@@ -599,8 +723,7 @@ function mvSheet(id, sh) {
     ${d.genres.length ? `<div class="gen">${d.genres.map(g => `<span>${esc(g)}</span>`).join("")}</div>` : ""}
     ${d.tagline ? `<div style="font-style:italic;color:var(--mu);margin-top:6px">${esc(d.tagline)}</div>` : ""}
     ${syn ? `<div class="syn ${st.full ? "" : "clamp"}" data-a="synMore">${esc(syn)}</div>${!d.overview ? `<div class="vo">Synopsis en VO (pas de traduction française)</div>` : ""}` : ""}
-    ${provHtml(st.prov)}
-    ${d.cast?.length ? sec("Distribution") + castHtml(d.cast) : ""}
+      ${d.cast?.length ? sec("Distribution") + castHtml(d.cast) : ""}
   </div>`;
 }
 
@@ -639,6 +762,9 @@ const A = {
   closeSheet: () => history.back(),
   sfilter: el => { ui.seriesFilter = el.dataset.v; renderView(); },
   mseg: el => { ui.movieSeg = el.dataset.v; renderView(); },
+  sugseg: el => { ui.sugSeg = el.dataset.v; renderView(); window.scrollTo(0, 0); },
+  theme: el => { applyTheme({ ...THEMES[el.dataset.v] }, true); renderView(true); },
+  themeReset: () => { applyTheme(null, true); renderView(true); },
   synMore: () => { const sh = sheets.at(-1); if (sh) { sh.state.full = !sh.state.full; sh.refresh(); } },
   dismiss: el => { localStorage.setItem("bobine:" + el.dataset.v, "1"); renderView(); },
 
@@ -886,7 +1012,7 @@ function startApp() {
   ui.mode = "app";
   $("#tabs").classList.remove("hidden"); $("#view").style.padding = "";
   const h = location.hash.slice(1);
-  if (TABS.some(t => t[0] === h) || h === "profile") ui.tab = h;
+  if (TABS.some(t => t[0] === h) || h === "profile") ui.tab = h; else ui.tab = "series";
   renderView(true);
   push.status().then(s => { ui.pushStatus = s; renderView(); }).catch(() => { });
   push.refresh();
@@ -921,7 +1047,7 @@ if ("serviceWorker" in navigator) {
 // Lien profond depuis une notification (#tv-123 / #mv-456)
 window.addEventListener("load", () => {
   const m = location.hash.match(/^#(tv|mv)-(\d+)/);
-  if (m) { const id = +m[2]; history.replaceState(null, "", "#upnext"); const t = setInterval(() => { if (ui.mode === "app") { clearInterval(t); (m[1] === "tv" ? openTv : openMovie)(id); } }, 150); setTimeout(() => clearInterval(t), 10000); }
+  if (m) { const id = +m[2]; history.replaceState(null, "", "#series"); const t = setInterval(() => { if (ui.mode === "app") { clearInterval(t); (m[1] === "tv" ? openTv : openMovie)(id); } }, 150); setTimeout(() => clearInterval(t), 10000); }
 });
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && ui.mode === "app") { requested.clear(); later(); } });
 
