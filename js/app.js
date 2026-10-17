@@ -203,7 +203,7 @@ function upCard(x) {
   const la = x.la;
   const meta = fresh ? `🔔 ${SE(la.season_number, la.episode_number)} sorti ${rel(la.air_date)}${p.remaining > 1 ? ` · ${p.remaining} à voir` : ""}` : p.watched === 0 ? `Pas commencée · ${plural(p.aired, "épisode")}` : "" + (p.remaining > 1 ? `${fresh ? " · " : ""}+${p.remaining - 1} ensuite` : (fresh ? "" : "Dernier épisode dispo"));
   return `<div class="up ${fresh ? "fresh" : ""}" data-a="ep" data-id="${s.id}" data-s="${n.s}" data-e="${n.e}">
-    <div class="th">${still ? `<img src="${still}" alt="" loading="lazy">` : ""}${fresh ? `<span class="new">NOUVEL ÉP.</span>` : ""}</div>
+    <div class="th">${still ? `<img src="${still}" alt="" loading="lazy">` : ""}</div>
     <div class="tx"><div class="n">${name}</div><div class="e">${SE(n.s, n.e)}${ep?.name ? " · " + esc(ep.name) : ""}</div><div class="m">${meta}</div>
     <div class="prow"><div class="bar"><i style="width:${p.aired ? Math.round(p.watched / p.aired * 100) : 0}%"></i></div><small>${p.watched}/${p.aired} ép. · ${plural(nSeasons(t), "saison")}</small></div></div>
     <button class="chk" data-a="watchNext" data-id="${s.id}" data-s="${n.s}" data-e="${n.e}" aria-label="Marquer comme vu">${I.check}</button>
@@ -283,8 +283,11 @@ function calRow(x, past) {
 }
 
 // ═════════════ Vue : Séries ═════════════
+const SERIES_F = [["watching", "En cours"], ["later", "Plus tard"], ["waiting", "À jour"], ["finished", "Terminées"], ["stopped", "Arrêtées"], ["all", "Toutes"]];
+const MOVIE_F = [["watchlist", "À voir"], ["watched", "Vus"]];
+const viewToggle = () => `<div style="display:flex;gap:8px"><button class="iconbtn" data-a="sview" aria-label="Changer l'affichage">${ui.seriesView === "grid" ? I.list : I.grid}</button>${profileBtn}</div>`;
 function vSeries(v) {
-  const toggle = `<div style="display:flex;gap:8px"><button class="iconbtn" data-a="sview" aria-label="Changer l'affichage">${ui.seriesView === "grid" ? I.list : I.grid}</button>${profileBtn}</div>`;
+  const toggle = viewToggle();
   if (!store.data.ready) { v.innerHTML = top("Séries", "", toggle) + skel(); return; }
   const shows = store.data.shows;
   if (!shows.size) {
@@ -297,7 +300,7 @@ function vSeries(v) {
   const items = upNextItems(c);
   const freshN = items.filter(x => x.fresh).length;
   ui.badge = freshN; push.setBadge(freshN);
-  const F = [["watching", "En cours"], ["waiting", "À jour"], ["later", "Plus tard"], ["finished", "Terminées"], ["stopped", "Arrêtées"], ["all", "Toutes"]];
+  const F = SERIES_F;
   const eps = [...shows.values()].reduce((n, s) => n + seenCount(s, details.get(s.id)), 0);
   let h = top("Séries", `${plural(shows.size, "série")} · ${plural(eps, "épisode")} vus`, toggle) + banners();
   h += `<div class="chips">${F.map(([k, l]) => `<button class="chip ${ui.seriesFilter === k ? "on" : ""}" data-a="sfilter" data-v="${k}">${l} ${k === "all" ? shows.size : (c[k] || []).length}</button>`).join("")}</div>`;
@@ -306,7 +309,6 @@ function vSeries(v) {
   if (ui.seriesFilter === "watching") {
     const left = items.reduce((n, x) => n + (x.p?.remaining || 0), 0);
     if (!items.length) { v.innerHTML = h + `<div class="empty" style="padding:24px">${I.check}<h3>À jour !</h3><p>Rien à rattraper pour l'instant.</p></div>`; return; }
-    h += `<div class="sugsub">${plural(left, "épisode")} à rattraper${freshN ? ` · <b style="color:var(--ac)">${freshN} nouvel${freshN > 1 ? "les" : ""} sortie${freshN > 1 ? "s" : ""}</b>` : ""}</div>`;
     if (ui.seriesView === "list") { v.innerHTML = h + items.map(upCard).join(""); return; }
     list = items;
   } else {
@@ -336,7 +338,7 @@ function vSeries(v) {
       const p = x.t ? progress(x.s, x.t) : null;
       const pct = p?.aired ? Math.round(p.watched / p.aired * 100) : 0;
       const fresh = x.fresh;
-      return `<button class="gp ${fresh ? "fresh" : ""}" data-a="tv" data-id="${x.s.id}"><div class="p">${pimg(x.t?.poster_path || x.s.poster_path, x.t?.name || x.s.name)}${fresh ? `<span class="newb">NOUVEL ÉP.</span>` : ""}${pct === 100 ? `<span class="badge">${I.check}</span>` : ""}${pct && pct < 100 ? `<div class="pbar"><i style="width:${pct}%"></i></div>` : ""}</div><div class="t">${esc(x.t?.name || x.s.name)}</div><div class="s">${esc(subOf(x))}</div>${p ? `<div class="s">${p.watched}/${p.aired} ép. · ${plural(nSeasons(x.t), "saison")}</div>` : ""}</button>`;
+      return `<button class="gp ${fresh ? "fresh" : ""}" data-a="tv" data-id="${x.s.id}"><div class="p">${pimg(x.t?.poster_path || x.s.poster_path, x.t?.name || x.s.name)}${pct === 100 ? `<span class="badge">${I.check}</span>` : ""}${pct && pct < 100 ? `<div class="pbar"><i style="width:${pct}%"></i></div>` : ""}</div><div class="t">${esc(x.t?.name || x.s.name)}</div><div class="s">${esc(subOf(x))}</div>${p ? `<div class="s">${p.watched}/${p.aired} ép. · ${plural(nSeasons(x.t), "saison")}</div>` : ""}</button>`;
     }).join("")}</div>`;
   }
   v.innerHTML = h;
@@ -426,21 +428,25 @@ function vMovies(v) {
   const all = [...store.data.movies.values()];
   const watched = all.filter(m => m.status === "watched").sort((a, b) => (b.watchedAt || 0) - (a.watchedAt || 0));
   const wl = all.filter(m => m.status === "watchlist").sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
-  const mins = watched.reduce((n, m) => n + (m.runtime || movieD.get(m.id)?.runtime || 110), 0);
-  let h = top("Films", `${plural(watched.length, "film")} vu${watched.length > 1 ? "s" : ""} · ${dur(mins)}`, profileBtn);
+  let h = top("Films", "", viewToggle());
   h += `<div class="seg"><button data-a="mseg" data-v="watchlist" class="${ui.movieSeg === "watchlist" ? "on" : ""}">À voir · ${wl.length}</button><button data-a="mseg" data-v="watched" class="${ui.movieSeg === "watched" ? "on" : ""}">Vus · ${watched.length}</button></div>`;
-  const cell = (m, sub) => `<button class="gp" data-a="mv" data-id="${m.id}"><div class="p">${pimg(m.poster_path, m.title)}${m.rating ? `<span class="badge" style="width:auto;padding:0 6px;border-radius:8px;font-size:11px;font-weight:800">${m.rating}★</span>` : ""}</div><div class="t">${esc(m.title)}</div><div class="s">${esc(sub)}</div></button>`;
+  const list = ui.seriesView === "list";
+  const star = m => m.rating ? `<span class="badge" style="width:auto;padding:0 6px;border-radius:8px;font-size:11px;font-weight:800">${m.rating}★</span>` : "";
+  const cell = (m, sub) => list
+    ? `<button class="li" data-a="mv" data-id="${m.id}"><div class="ps">${pimg(m.poster_path, m.title, "w154")}</div><div class="tx"><div class="n">${esc(m.title)}</div><div class="d">${esc(sub)}${m.rating ? ` · <span style="color:var(--ac)">${"★".repeat(m.rating)}</span>` : ""}</div></div></button>`
+    : `<button class="gp" data-a="mv" data-id="${m.id}"><div class="p">${pimg(m.poster_path, m.title)}${star(m)}</div><div class="t">${esc(m.title)}</div><div class="s">${esc(sub)}</div></button>`;
+  const wrap = inner => list ? inner : `<div class="grid">${inner}</div>`;
   if (ui.movieSeg === "watched") {
     if (!watched.length) h += `<div class="empty">${I.film}<h3>Aucun film vu</h3><p>Cherche un film dans Explorer et marque-le comme vu.</p></div>`;
     const byMonth = new Map();
     watched.forEach(m => { const k = m.watchedAt ? new Date(m.watchedAt).toLocaleDateString("fr-FR", { month: "long", year: "numeric" }) : "Date inconnue"; if (!byMonth.has(k)) byMonth.set(k, []); byMonth.get(k).push(m); });
-    for (const [k, arr] of byMonth) h += sec(k.charAt(0).toUpperCase() + k.slice(1), arr.length) + `<div class="grid">${arr.map(m => cell(m, year(m.release_date))).join("")}</div>`;
+    for (const [k, arr] of byMonth) h += sec(k.charAt(0).toUpperCase() + k.slice(1), arr.length) + wrap(arr.map(m => cell(m, year(m.release_date) + (list && m.runtime ? ` · ${Math.floor(m.runtime / 60)} h ${String(m.runtime % 60).padStart(2, "0")}` : ""))).join(""));
   } else {
     if (!wl.length) h += `<div class="empty">${I.mark}<h3>Liste vide</h3><p>Ajoute des films à voir (Suggestions ou Explorer) : tu seras notifié à leur sortie.</p></div>`;
-    else h += `<div class="grid">${wl.map(m => {
+    else h += wrap(wl.map(m => {
       const d = needMovie(m.id); const rf = d?.release_fr || {}; const nd = [rf.theatrical, rf.digital, m.release_date].filter(Boolean).find(x => x >= isoToday());
       return cell(m, nd ? "Sortie " + fmtShort(nd) : year(m.release_date));
-    }).join("")}</div>`;
+    }).join(""));
   }
   v.innerHTML = h;
 }
@@ -765,6 +771,13 @@ async function showFromTmdb(id, status = "watching") {
   details.set(id, t);
   return { id, name: t.name, poster_path: t.poster_path, backdrop_path: t.backdrop_path, status, addedAt: Date.now(), watched: {}, runtime: t.episode_run_time?.[0] || t.last_episode_to_air?.runtime || null };
 }
+// Cocher un épisode « vu » valide aussi tous les épisodes précédents déjà sortis
+async function withPrevious(id, s, e) {
+  const t = details.get(id) || await tmdb.tv(id).catch(() => null);
+  if (!t || s === 0) return [{ s, e }];
+  const l = airedList(t).filter(x => x.s < s || (x.s === s && x.e <= e));
+  return l.some(x => x.s === s && x.e === e) ? l : [...l, { s, e }];
+}
 async function setEps(id, list, val) {
   let s = store.data.shows.get(id) || await showFromTmdb(id);
   const w = {}; for (const k in s.watched || {}) w[k] = [...s.watched[k]];
@@ -806,12 +819,20 @@ const A = {
     const id = +el.dataset.id, s = +el.dataset.s, e = +el.dataset.e;
     const card = el.closest(".up");
     if (card) { card.classList.add("done"); await new Promise(r => setTimeout(r, 300)); }
-    const prev = await setEps(id, [{ s, e }], true);
-    toast(`${SE(s, e)} marqué vu`, "Annuler", () => prev ? store.saveShow(prev) : store.deleteShow(id));
+    const list = await withPrevious(id, s, e);
+    const before = store.data.shows.get(id);
+    const added = list.filter(x => !isWatched(before, x.s, x.e)).length;
+    const prev = await setEps(id, list, true);
+    toast(added > 1 ? `${SE(s, e)} + ${added - 1} précédent${added > 2 ? "s" : ""} marqués vus` : `${SE(s, e)} marqué vu`, "Annuler", () => prev ? store.saveShow(prev) : store.deleteShow(id));
   },
   async toggleEp(el) {
     const id = +el.dataset.id, s = +el.dataset.s, e = +el.dataset.e;
-    await setEps(id, [{ s, e }], !isWatched(store.data.shows.get(id), s, e));
+    const cur = store.data.shows.get(id);
+    if (isWatched(cur, s, e)) { await setEps(id, [{ s, e }], false); return; }
+    const list = await withPrevious(id, s, e);
+    const added = list.filter(x => !isWatched(cur, x.s, x.e)).length;
+    const prev = await setEps(id, list, true);
+    if (added > 1) toast(`${SE(s, e)} + ${added - 1} précédent${added > 2 ? "s" : ""} marqués vus`, "Annuler", () => prev ? store.saveShow(prev) : store.deleteShow(id));
   },
   async upTo(el) {
     const id = +el.dataset.id, s = +el.dataset.s, e = +el.dataset.e;
@@ -902,6 +923,32 @@ document.addEventListener("click", ev => {
   ev.preventDefault(); ev.stopPropagation();
   Promise.resolve(fn(el, ev)).catch(e => { console.error(e); onErr(e); if (!["BAD_KEY", "NO_KEY"].includes(e.message)) toast("Erreur : " + e.message); });
 });
+
+// ═════════════ Swipe gauche / droite entre les filtres ═════════════
+(() => {
+  let x0 = null, y0 = 0, t0 = 0;
+  const view = document.getElementById("view");
+  view.addEventListener("touchstart", e => {
+    if (sheets.length || !["series", "movies"].includes(ui.tab) || e.touches.length > 1) { x0 = null; return; }
+    if (e.target.closest(".row, .chips, .cast, input")) { x0 = null; return; }
+    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; t0 = Date.now();
+  }, { passive: true });
+  view.addEventListener("touchend", e => {
+    if (x0 === null) return;
+    const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0; x0 = null;
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.6 || Date.now() - t0 > 700) return;
+    const dir = dx < 0 ? 1 : -1;
+    const [F, key] = ui.tab === "series" ? [SERIES_F, "seriesFilter"] : [MOVIE_F, "movieSeg"];
+    const i = F.findIndex(f => f[0] === ui[key]);
+    const j = i + dir; if (j < 0 || j >= F.length) return;
+    ui[key] = F[j][0];
+    view.style.transition = "none"; view.style.transform = `translateX(${dir * 24}px)`; view.style.opacity = ".4";
+    renderView();
+    requestAnimationFrame(() => { view.style.transition = "transform .2s, opacity .2s"; view.style.transform = ""; view.style.opacity = ""; });
+    document.querySelector(".chip.on")?.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
+    window.scrollTo(0, 0);
+  }, { passive: true });
+})();
 
 // ═════════════ Import ═════════════
 async function runImport(files) {
