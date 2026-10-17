@@ -11,6 +11,7 @@ const SA = JSON.parse(need("FIREBASE_SERVICE_ACCOUNT"));
 const TMDB_KEY = need("TMDB_KEY").trim();
 webpush.setVapidDetails(env.VAPID_SUBJECT || "mailto:bobine@example.com", need("VAPID_PUBLIC_KEY").trim(), need("VAPID_PRIVATE_KEY").trim());
 const TEST = env.TEST === "true";
+const RAWG_KEY = (env.RAWG_KEY || "").trim();
 const LOOKBACK = +(env.LOOKBACK_DAYS || 2);   // épisodes sortis depuis N jours
 const APP_URL = (env.APP_URL || "./").replace(/\/?$/, "/");
 
@@ -137,6 +138,23 @@ async function runUser(uid, subs) {
         });
       }
     } catch (e) { console.warn(uid, "movie", m.id, e.message); }
+  }));
+
+  // Jeux vidéo : sortie d'un jeu de la liste « Envies » / « À jouer »
+  const gamesSnap = await db.collection(`users/${uid}/games`).where("status", "in", ["wishlist", "backlog"]).get();
+  await Promise.all(gamesSnap.docs.map(async d => {
+    const g = d.data();
+    if (g.notifiedRelease) return;
+    let released = g.released;
+    if (RAWG_KEY && (!released || released >= SINCE)) {
+      try { const r = await fetch(`https://api.rawg.io/api/games/${g.id}?key=${RAWG_KEY}`); if (r.ok) released = (await r.json()).released || released; } catch { }
+    }
+    if (!released || released < SINCE || released > TODAY) return;
+    notes.push({
+      kind: "game", name: g.name,
+      payload: { title: g.name, body: `🎮 ${g.name} est sorti aujourd'hui !`, image: g.background_image || undefined, url: APP_URL + "#gm-" + g.id, tag: "gm-" + g.id },
+      mark: () => d.ref.update({ notifiedRelease: true, released })
+    });
   }));
 
   if (!notes.length) return;
