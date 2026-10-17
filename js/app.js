@@ -142,7 +142,7 @@ const TABS = [
 ];
 function renderTabs(badge = 0) {
   $("#tabs").innerHTML = TABS.map(([k, l, ic]) =>
-    `<button data-a="tab" data-v="${k}" class="${ui.tab === k ? "on" : ""}">${ic}${l}${k === "series" && badge ? `<span class="dot">${badge > 99 ? "99+" : badge}</span>` : ""}</button>`).join("");
+    `<button data-a="tab" data-v="${k}" class="${ui.tab === k ? "on" : ""}">${ic}${l}</button>`).join("");
 }
 function go(tab) {
   if (tab === ui.tab) { window.scrollTo({ top: 0, behavior: "smooth" }); return; }
@@ -201,9 +201,9 @@ function upCard(x) {
   const n = p.next;
   const still = ep?.still_path ? img(ep.still_path, "w300") : img(t.backdrop_path || s.backdrop_path, "w300");
   const la = x.la;
-  const meta = fresh ? `🔔 ${SE(la.season_number, la.episode_number)} sorti ${rel(la.air_date)}${p.remaining > 1 ? ` · ${p.remaining} à voir` : ""}` : p.watched === 0 ? `Pas commencée · ${plural(p.aired, "épisode")}` : "" + (p.remaining > 1 ? `${fresh ? " · " : ""}+${p.remaining - 1} ensuite` : (fresh ? "" : "Dernier épisode dispo"));
+  const meta = p.watched === 0 ? `Pas commencée · ${plural(p.aired, "épisode")}` : "" + (p.remaining > 1 ? `${fresh ? " · " : ""}+${p.remaining - 1} ensuite` : (fresh ? "" : "Dernier épisode dispo"));
   return `<div class="up ${fresh ? "fresh" : ""}" data-a="ep" data-id="${s.id}" data-s="${n.s}" data-e="${n.e}">
-    <div class="th">${still ? `<img src="${still}" alt="" loading="lazy">` : ""}</div>
+    <div class="th">${still ? `<img src="${still}" alt="" loading="lazy">` : ""}${fresh ? `<span class="new">NOUVEL ÉP.</span>` : ""}</div>
     <div class="tx"><div class="n">${name}</div><div class="e">${SE(n.s, n.e)}${ep?.name ? " · " + esc(ep.name) : ""}</div><div class="m">${meta}</div>
     <div class="prow"><div class="bar"><i style="width:${p.aired ? Math.round(p.watched / p.aired * 100) : 0}%"></i></div><small>${p.watched}/${p.aired} ép. · ${plural(nSeasons(t), "saison")}</small></div></div>
     <button class="chk" data-a="watchNext" data-id="${s.id}" data-s="${n.s}" data-e="${n.e}" aria-label="Marquer comme vu">${I.check}</button>
@@ -283,7 +283,7 @@ function calRow(x, past) {
 }
 
 // ═════════════ Vue : Séries ═════════════
-const SERIES_F = [["watching", "En cours"], ["later", "Plus tard"], ["waiting", "À jour"], ["finished", "Terminées"], ["stopped", "Arrêtées"], ["all", "Toutes"]];
+const SERIES_F = [["watching", "En cours"], ["later", "À voir"], ["waiting", "À jour"], ["finished", "Terminées"], ["stopped", "Arrêtées"], ["all", "Toutes"]];
 const MOVIE_F = [["watchlist", "À voir"], ["watched", "Vus"]];
 const viewToggle = () => `<div style="display:flex;gap:8px"><button class="iconbtn" data-a="sview" aria-label="Changer l'affichage">${ui.seriesView === "grid" ? I.list : I.grid}</button>${profileBtn}</div>`;
 function vSeries(v) {
@@ -301,9 +301,8 @@ function vSeries(v) {
   const freshN = items.filter(x => x.fresh).length;
   ui.badge = freshN; push.setBadge(freshN);
   const F = SERIES_F;
-  const eps = [...shows.values()].reduce((n, s) => n + seenCount(s, details.get(s.id)), 0);
-  let h = top("Séries", `${plural(shows.size, "série")} · ${plural(eps, "épisode")} vus`, toggle) + banners();
-  h += `<div class="chips">${F.map(([k, l]) => `<button class="chip ${ui.seriesFilter === k ? "on" : ""}" data-a="sfilter" data-v="${k}">${l} ${k === "all" ? shows.size : (c[k] || []).length}</button>`).join("")}</div>`;
+  let h = top("Séries", "", toggle) + banners();
+  h += `<div class="chips">${F.map(([k, l]) => `<button class="chip ${ui.seriesFilter === k ? "on" : ""}" data-a="sfilter" data-v="${k}">${l}</button>`).join("")}</div>`;
 
   let list;
   if (ui.seriesFilter === "watching") {
@@ -338,7 +337,7 @@ function vSeries(v) {
       const p = x.t ? progress(x.s, x.t) : null;
       const pct = p?.aired ? Math.round(p.watched / p.aired * 100) : 0;
       const fresh = x.fresh;
-      return `<button class="gp ${fresh ? "fresh" : ""}" data-a="tv" data-id="${x.s.id}"><div class="p">${pimg(x.t?.poster_path || x.s.poster_path, x.t?.name || x.s.name)}${pct === 100 ? `<span class="badge">${I.check}</span>` : ""}${pct && pct < 100 ? `<div class="pbar"><i style="width:${pct}%"></i></div>` : ""}</div><div class="t">${esc(x.t?.name || x.s.name)}</div><div class="s">${esc(subOf(x))}</div>${p ? `<div class="s">${p.watched}/${p.aired} ép. · ${plural(nSeasons(x.t), "saison")}</div>` : ""}</button>`;
+      return `<button class="gp ${fresh ? "fresh" : ""}" data-a="tv" data-id="${x.s.id}"><div class="p">${pimg(x.t?.poster_path || x.s.poster_path, x.t?.name || x.s.name)}${fresh ? `<span class="newb">NOUVEL ÉP.</span>` : ""}${pct === 100 ? `<span class="badge">${I.check}</span>` : ""}${pct && pct < 100 ? `<div class="pbar"><i style="width:${pct}%"></i></div>` : ""}</div><div class="t">${esc(x.t?.name || x.s.name)}</div></button>`;
     }).join("")}</div>`;
   }
   v.innerHTML = h;
@@ -429,7 +428,7 @@ function vMovies(v) {
   const watched = all.filter(m => m.status === "watched").sort((a, b) => (b.watchedAt || 0) - (a.watchedAt || 0));
   const wl = all.filter(m => m.status === "watchlist").sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
   let h = top("Films", "", viewToggle());
-  h += `<div class="seg"><button data-a="mseg" data-v="watchlist" class="${ui.movieSeg === "watchlist" ? "on" : ""}">À voir · ${wl.length}</button><button data-a="mseg" data-v="watched" class="${ui.movieSeg === "watched" ? "on" : ""}">Vus · ${watched.length}</button></div>`;
+  h += `<div class="seg"><button data-a="mseg" data-v="watchlist" class="${ui.movieSeg === "watchlist" ? "on" : ""}">À voir</button><button data-a="mseg" data-v="watched" class="${ui.movieSeg === "watched" ? "on" : ""}">Vus</button></div>`;
   const list = ui.seriesView === "list";
   const star = m => m.rating ? `<span class="badge" style="width:auto;padding:0 6px;border-radius:8px;font-size:11px;font-weight:800">${m.rating}★</span>` : "";
   const cell = (m, sub) => list
