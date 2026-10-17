@@ -73,7 +73,8 @@ const details = new Map();   // tv id -> détail allégé
 const seasons = new Map();   // "id:n" -> saison
 const movieD = new Map();    // movie id -> détail
 const requested = new Set();
-const TVP = { append_to_response: "external_ids,aggregate_credits" };
+const TVP = { append_to_response: "external_ids" };
+const tvErr = new Set();
 
 function needTv(id) {
   const k = "tv" + id;
@@ -81,7 +82,7 @@ function needTv(id) {
     requested.add(k);
     (async () => {
       if (!details.has(id)) { const c = await tmdb.peek(`/tv/${id}`, TVP); if (c && !details.has(id)) { details.set(id, c); later(); } }
-      try { details.set(id, await tmdb.tv(id)); later(); } catch (e) { onErr(e); }
+      try { details.set(id, await tmdb.tv(id)); tvErr.delete(id); later(); } catch (e) { if (!details.has(id)) tvErr.add(id); onErr(e); later(); }
     })();
   }
   return details.get(id);
@@ -122,9 +123,11 @@ function onErr(e) {
 
 // ═════════════ Rendu planifié ═════════════
 let raf = 0;
+let lastRender = 0;
 function later() {
   if (raf) return;
-  raf = requestAnimationFrame(() => { raf = 0; if (ui.mode === "app") { renderView(); sheets.at(-1)?.refresh(); } });
+  const wait = Math.max(0, 250 - (performance.now() - lastRender));
+  raf = setTimeout(() => requestAnimationFrame(() => { raf = 0; lastRender = performance.now(); if (ui.mode === "app") { renderView(); sheets.at(-1)?.refresh(); } }), wait);
 }
 store.onChange(st => {
   if (store.hasFirebase && !st.user) return renderAuth();
@@ -640,6 +643,8 @@ function openTv(id) {
 }
 function tvSheet(id, sh) {
   const t = needTv(id); const s = store.data.shows.get(id); const st = sh.state;
+  if (!t && tvErr.has(id)) return `<div class="body" style="padding-top:calc(var(--st) + 70px)"><div class="empty">${I.tv}<h3>Fiche indisponible</h3><p>TMDB ne répond pas pour cette série. Réessaie dans un instant.</p><button class="btn pri" data-a="retryTv" data-id="${id}">Réessayer</button></div></div>`;
+  if (t && st.cast === undefined) { st.cast = null; tmdb.tvCast(id).then(c => { st.cast = c; sh.refresh(); }).catch(() => { st.cast = []; }); }
   if (!t) return `<div class="hero sk"></div><div class="body"><div class="sk" style="height:28px;width:70%;border-radius:8px"></div></div>`;
   if (!t.overview && st.en === undefined) { st.en = null; tmdb.tvOverviewEN(id).then(o => { st.en = o || ""; sh.refresh(); }).catch(() => { }); }
   const p = progress(s || {}, t);
@@ -689,7 +694,7 @@ function tvSheet(id, sh) {
     }
     h += `</div>`;
   }
-  if (t.cast?.length) h += sec("Distribution") + castHtml(t.cast);
+  if (st.cast?.length) h += sec("Distribution") + castHtml(st.cast);
   return h + `</div>`;
 }
 function provHtml(p) {
@@ -789,6 +794,7 @@ const A = {
   closeSheet: () => history.back(),
   sfilter: el => { ui.seriesFilter = el.dataset.v; renderView(); },
   mseg: el => { ui.movieSeg = el.dataset.v; renderView(); },
+  retryTv: el => { const id = +el.dataset.id; tvErr.delete(id); requested.delete("tv" + id); sheets.at(-1)?.refresh(); },
   sview: () => { ui.seriesView = ui.seriesView === "grid" ? "list" : "grid"; try { localStorage.setItem("bobine:sview", ui.seriesView); } catch { } renderView(); },
   sugseg: el => { ui.sugSeg = el.dataset.v; renderView(); window.scrollTo(0, 0); },
   theme: el => { applyTheme({ ...THEMES[el.dataset.v] }, true); renderView(true); },

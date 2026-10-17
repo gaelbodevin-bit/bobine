@@ -63,7 +63,9 @@ async function raw(path, params = {}, attempt = 0) {
   const bearer = key.startsWith("eyJ");
   if (!bearer) p.api_key = key;
   for (const [k, v] of Object.entries(p)) if (v !== undefined && v !== null) u.searchParams.set(k, v);
-  const r = await fetch(u, { headers: bearer ? { Authorization: "Bearer " + key, accept: "application/json" } : { accept: "application/json" } });
+  const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 20000);
+  const r = await fetch(u, { signal: ctl.signal, headers: bearer ? { Authorization: "Bearer " + key, accept: "application/json" } : { accept: "application/json" } });
+  clearTimeout(to);
   if (r.status === 429 && attempt < 3) { await new Promise(s => setTimeout(s, 1200 * (attempt + 1))); return raw(path, params, attempt + 1); }
   if (r.status === 401) throw new Error("BAD_KEY");
   if (!r.ok) throw new Error("TMDB " + r.status);
@@ -149,8 +151,12 @@ function frReleases(rd) {
 
 // ── API publique ────────────────────────────────────────────
 export async function tv(id, opts = {}) {
-  const v = await get(`/tv/${id}`, { append_to_response: "external_ids,aggregate_credits" }, { ttl: 12, slim: slimTv, ...opts });
+  const v = await get(`/tv/${id}`, { append_to_response: "external_ids" }, { ttl: 12, slim: slimTv, ...opts });
   return v;
+}
+// Casting léger (dernière saison) chargé à part : aggregate_credits est énorme sur les longues séries (One Piece…)
+export async function tvCast(id) {
+  return get(`/tv/${id}/credits`, {}, { ttl: 168, slim: c => (c.cast || []).slice(0, 12).map(x => ({ name: x.name, character: x.character, profile_path: x.profile_path })) });
 }
 export async function tvOverviewEN(id) {
   const t = await get(`/tv/${id}`, { language: "en-US" }, { ttl: 168, slim: x => ({ overview: x.overview }) });
@@ -220,8 +226,13 @@ export async function popularTv() {
 const today = () => new Date().toISOString().slice(0, 10);
 
 // Liste ordonnée des épisodes déjà diffusés [{s,e}] (hors spéciaux), à partir du seul détail série.
+const airedCache = new WeakMap();
 export function airedList(t) {
   if (!t) return [];
+  const c = airedCache.get(t); if (c) return c;
+  const r = computeAired(t); airedCache.set(t, r); return r;
+}
+function computeAired(t) {
   const last = t.last_episode_to_air;
   if (!last) return [];
   const td = today();
@@ -240,18 +251,32 @@ export function airedList(t) {
   }
   return out;
 }
-export const isWatched = (show, s, e) => !!show?.watched?.[s]?.includes(e);
+// Ensemble des épisodes vus, mis en cache par objet "watched" (recalculé seulement s'il change)
+const wsCache = new WeakMap();
+function watchedSet(show) {
+  const w = show?.watched; if (!w) return null;
+  let st = wsCache.get(w);
+  if (!st) { st = new Set(); for (const k in w) for (const e of w[k]) st.add(k + ":" + e); wsCache.set(w, st); }
+  return st;
+}
+export const isWatched = (show, s, e) => !!watchedSet(show)?.has(s + ":" + e);
 export function watchedCount(show) {
   let n = 0; for (const k in show?.watched || {}) if (k !== "0") n += show.watched[k].length; return n;
 }
-// Épisodes vus parmi ceux réellement sortis (même base que le compteur x / y)
-export function seenCount(show, t) {
-  if (!t) return watchedCount(show);
-  return airedList(t).reduce((n, x) => n + (isWatched(show, x.s, x.e) ? 1 : 0), 0);
-}
+const progCache = new WeakMap();
 export function progress(show, t) {
+  if (!t) return { aired: 0, watched: 0, next: null, remaining: 0 };
+  const w = show?.watched || null;
+  let byT = progCache.get(t); if (!byT) { byT = new WeakMap(); progCache.set(t, byT); }
+  const key = w || progress;
+  const hit = byT.get(key); if (hit) return hit;
   const aired = airedList(t);
-  const unwatched = aired.filter(x => !isWatched(show, x.s, x.e));
-  return { aired: aired.length, watched: aired.length - unwatched.length, next: unwatched[0] || null, remaining: unwatched.length };
+  let next = null, remaining = 0;
+  for (const x of aired) if (!isWatched(show, x.s, x.e)) { remaining++; if (!next) next = x; }
+  const r = { aired: aired.length, watched: aired.length - remaining, next, remaining };
+  byT.set(key, r);
+  return r;
 }
+// Épisodes vus parmi ceux réellement sortis (même base que le compteur x / y)
+export function seenCount(show, t) { return t ? progress(show, t).watched : watchedCount(show); }
 export { today };
