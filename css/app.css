@@ -1,5 +1,5 @@
 :root{
-  --bg:#0d0d11; --s1:#16161c; --s2:#1f1f27; --s3:#2a2a34; --line:#ffffff14;
+  --bg:#0d0d11; --s1:#16161c; --s2:#1f1f27; --s3:#2a2a34; --line:#ffffff14; --bar:#0d0d11e6;
   --tx:#f3f3f6; --mu:#9b9bab; --mu2:#6d6d7c;
   --ac:#ffc83d; --ac-tx:#1a1400; --ok:#3ddc97; --bad:#ff5d6c;
   --r:14px; --r2:20px;
@@ -28,7 +28,7 @@ img{display:block;max-width:100%}
 .sec .c{color:var(--mu);font-size:14px}
 
 /* ── Tab bar ── */
-#tabs{position:fixed;left:0;right:0;bottom:0;z-index:20;display:flex;justify-content:space-around;padding:6px 6px calc(var(--sb) + 4px);background:#0d0d11e6;backdrop-filter:blur(20px) saturate(1.4);-webkit-backdrop-filter:blur(20px) saturate(1.4);border-top:1px solid var(--line)}
+#tabs{position:fixed;left:0;right:0;bottom:0;z-index:20;display:flex;justify-content:space-around;padding:6px 6px calc(var(--sb) + 4px);background:var(--bar);backdrop-filter:blur(20px) saturate(1.4);-webkit-backdrop-filter:blur(20px) saturate(1.4);border-top:1px solid var(--line)}
 #tabs button{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10.5px;color:var(--mu2);padding:4px 0;position:relative}
 #tabs button svg{width:25px;height:25px}
 #tabs button.on{color:var(--ac)}
@@ -112,7 +112,7 @@ img{display:block;max-width:100%}
 .sheet .close svg{width:18px;height:18px}
 .hero{position:relative;aspect-ratio:16/10;max-height:56vh;width:100%;background:var(--s1);overflow:hidden}
 .hero img{width:100%;height:100%;object-fit:cover}
-.hero:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,#0d0d1100 35%,#0d0d11cc 78%,var(--bg))}
+.hero:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 35%,color-mix(in srgb,var(--bg) 80%,transparent) 78%,var(--bg))}
 .hd{display:flex;gap:14px;align-items:flex-end;padding:0 16px;margin-top:-90px;position:relative;z-index:2}
 .hd .ps{width:104px;aspect-ratio:2/3;border-radius:10px;overflow:hidden;flex:none;box-shadow:0 10px 30px #000a;background:var(--s2)}
 .hd .ps img{width:100%;height:100%;object-fit:cover}
@@ -214,3 +214,16 @@ img{display:block;max-width:100%}
 #toast{position:fixed;width:max-content;left:50%;bottom:calc(var(--tabh) + var(--sb) + 14px);transform:translate(-50%,20px);z-index:80;background:var(--tx);color:var(--bg);padding:11px 16px;border-radius:12px;font-size:14.5px;font-weight:600;display:flex;gap:14px;align-items:center;opacity:0;pointer-events:none;transition:.25s;max-width:calc(100% - 32px)}
 #toast.in{opacity:1;transform:translate(-50%,0);pointer-events:auto}
 #toast button{color:#b07d00;font-weight:800}
+
+/* Lignes de progression avec compteur à droite */
+.prow{display:flex;align-items:center;gap:8px;margin-top:7px}
+.prow .bar{flex:1;margin:0}
+.prow small{color:var(--mu);font-size:11.5px;white-space:nowrap}
+/* Apparence */
+.swatches{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.swatch{width:46px;height:46px;border-radius:12px;border:2px solid var(--s3);position:relative;overflow:hidden}
+.swatch.on{border-color:var(--ac)}
+.swatch i{position:absolute;left:0;right:0;bottom:0;height:40%}
+.colrow{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-top:1px solid var(--line)}
+.colrow input[type=color]{width:48px;height:32px;border:0;padding:0;background:none;border-radius:8px}
+.sugsub{color:var(--mu);font-size:13px;margin:-6px 0 8px}
