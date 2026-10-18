@@ -123,6 +123,24 @@ export async function resetPassword(email) {
   await loadFirebase();
   return fb.au.sendPasswordResetEmail(fb.auth, email);
 }
+// Suppression définitive du compte (exigence Google Play) : données Firestore + compte d'authentification
+export async function deleteAccount(password) {
+  if (!fb || !state.user || state.user.local) throw new Error("LOCAL");
+  const { db, fs, au, auth } = fb;
+  const u = auth.currentUser;
+  if (password) await au.reauthenticateWithCredential(u, au.EmailAuthProvider.credential(u.email, password));
+  const uid = u.uid;
+  unsubs.forEach(x => x()); unsubs = [];
+  for (const col of ["shows", "movies", "games", "push"]) {
+    const snap = await fs.getDocs(fs.collection(db, "users", uid, col));
+    for (let i = 0; i < snap.docs.length; i += 400) {
+      const b = fs.writeBatch(db); snap.docs.slice(i, i + 400).forEach(d => b.delete(d.ref)); await b.commit();
+    }
+  }
+  await fs.deleteDoc(fs.doc(db, "users", uid));
+  await au.deleteUser(u);
+}
+
 export async function signOut() {
   if (!fb) return;
   return fb.au.signOut(fb.auth);

@@ -543,6 +543,9 @@ function vProfile(v, force) {
     <button class="btn" data-a="saveRawg" style="width:100%">Enregistrer</button></div>` : ""}
 
   <div class="btns">${u && !u.local ? `<button class="btn ghost" data-a="logout">Se déconnecter</button>` : ""}<button class="btn ghost danger" data-a="wipe">Tout effacer</button></div>
+  ${u && !u.local ? `<div class="card"><h3>Supprimer mon compte</h3><p>Supprime définitivement ton compte et toutes tes données (séries, films, jeux, notifications). Pense à exporter une sauvegarde avant.</p>
+    <div id="delzone"><button class="btn ghost danger" data-a="delAccount" style="width:100%">${I.trash}Supprimer mon compte</button></div></div>` : ""}
+  <div class="foot"><a href="privacy.html" target="_blank" rel="noopener">Politique de confidentialité</a> · <a href="delete-account.html" target="_blank" rel="noopener">Suppression des données</a></div>
 `;
   $("#impfile").addEventListener("change", e => runImport([...e.target.files]));
   v.querySelectorAll("input[data-dom]").forEach(cb => cb.addEventListener("change", () => {
@@ -1158,6 +1161,20 @@ const A = {
   saveKey() { tmdb.setKey($("#tmdbk").value); requested.clear(); toast("Clé enregistrée"); ui.discover = null; },
   async refresh() { await tmdb.clearCache(); requested.clear(); details.clear(); seasons.clear(); movieD.clear(); ui.discover = null; toast("Cache vidé — rechargement des données"); renderView(); },
   async logout() { if (confirm("Se déconnecter ?")) { await push.disable().catch(() => { }); await store.signOut(); } },
+  delAccount() {
+    const z = $("#delzone");
+    z.innerHTML = `<p style="color:var(--bad);font-size:14px;margin:0 0 8px">Action définitive. Confirme avec ton mot de passe :</p>
+      <input class="field" id="delpw" type="password" placeholder="Mot de passe" autocomplete="current-password">
+      <div class="btns" style="margin:0"><button class="btn ghost" data-a="delCancel">Annuler</button><button class="btn danger" style="background:var(--bad);color:#fff" data-a="delConfirm">Supprimer définitivement</button></div><div class="err" id="delerr"></div>`;
+    $("#delpw").focus();
+  },
+  delCancel() { renderView(true); },
+  async delConfirm() {
+    const pw = $("#delpw").value; if (!pw) { $("#delerr").textContent = "Entre ton mot de passe."; return; }
+    $("#delerr").textContent = "Suppression en cours…";
+    try { await push.disable().catch(() => { }); await store.deleteAccount(pw); toast("Compte supprimé. À bientôt !"); }
+    catch (e) { $("#delerr").textContent = authErr(e); }
+  },
   async wipe() {
     if (!confirm("Effacer TOUTES tes séries, épisodes vus et films ? (exporte d'abord une sauvegarde)")) return;
     if (!confirm("Vraiment ? C'est définitif.")) return;
