@@ -1,5 +1,5 @@
 // Bobine — service worker : cache hors-ligne + notifications push
-const VERSION = "bobine-v12";
+const VERSION = "bobine-v13";
 const SHELL = [
   "./", "./index.html", "./manifest.webmanifest", "./css/app.css",
   "./js/app.js", "./js/config.js", "./js/tmdb.js", "./js/store.js", "./js/push.js", "./js/import-tvtime.js", "./js/rawg.js",
@@ -82,6 +82,7 @@ self.addEventListener("push", e => {
 
 self.addEventListener("notificationclick", e => {
   e.notification.close();
+  try { self.navigator.clearAppBadge?.(); } catch { }
   const target = new URL(e.notification.data?.url || "./", self.registration.scope).href;
   e.waitUntil((async () => {
     const all = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
