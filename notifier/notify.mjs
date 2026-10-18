@@ -85,7 +85,7 @@ async function runUser(uid, subs) {
 
   await Promise.all(showsSnap.docs.map(async d => {
     const show = d.data();
-    if (show.status === "stopped" && show.statusManual) return;
+    if (show.status === "stopped") return;
     try {
       const t = await tmdb(`/tv/${show.id}`);
       const la = t.last_episode_to_air;
