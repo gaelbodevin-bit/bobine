@@ -185,11 +185,13 @@ function classify() {
   const out = { watching: [], waiting: [], later: [], finished: [], stopped: [] };
   for (const s of store.data.shows.values()) {
     const t = needTv(s.id);
-    if (s.status === "later") { out.later.push({ s, t }); continue; }
-    if (s.status === "stopped") { out.stopped.push({ s, t }); continue; }
-    if (!t) { out.watching.push({ s, t: null, p: null }); continue; }
+    // « Arrêtée » / « À voir » choisis à la main sont respectés ; sinon c'est la progression qui range la série
+    if (s.statusManual && s.status === "later") { out.later.push({ s, t }); continue; }
+    if (s.statusManual && s.status === "stopped") { out.stopped.push({ s, t }); continue; }
+    if (!t) { (watchedCount(s) ? out.watching : out.later).push({ s, t: null, p: null }); continue; }
     const p = progress(s, t);
-    if (p.next) out.watching.push({ s, t, p });
+    if (p.watched === 0) out.later.push({ s, t, p });
+    else if (p.next) out.watching.push({ s, t, p });
     else if (["Ended", "Canceled"].includes(t.status) && p.aired > 0) out.finished.push({ s, t, p });
     else out.waiting.push({ s, t, p });
   }
@@ -249,7 +251,7 @@ function vUpcoming(v) {
   const recentMin = new Date(Date.now() - 7 * DAY).toISOString().slice(0, 10);
   const items = [], recent = [];
   for (const s of store.data.shows.values()) {
-    if (s.status === "stopped") continue;
+    if (s.status === "stopped" && s.statusManual) continue;
     const t = needTv(s.id); if (!t) continue;
     const seen = new Set();
     const addEp = (e, arr) => { const k = e.season_number + ":" + e.episode_number; if (seen.has(k)) return; seen.add(k); arr.push({ date: e.air_date, s, t, e }); };
@@ -888,7 +890,7 @@ function tvSheet(id, sh) {
     <div class="meta" style="margin-top:3px">${esc(STATUS_FR[t.status] || t.status || "")}${t.vote_average ? ` · <span style="color:var(--ac)">★</span> ${t.vote_average.toFixed(1)}` : ""}</div></div></div>
   <div class="body">
   <div class="btns">${s
-      ? `<button class="btn" data-a="showMenu" data-id="${id}">${s.status === "later" ? I.mark : s.status === "stopped" ? I.stop : I.play}${SHOW_ST[s.status] || "En cours"} ▾</button>`
+      ? `<button class="btn" data-a="showMenu" data-id="${id}">${(() => { const k = s.statusManual ? s.status : (p.watched === 0 ? "later" : "watching"); return (k === "later" ? I.mark : k === "stopped" ? I.stop : I.play) + (SHOW_ST[k] || "En cours"); })()} ▾</button>`
       : `<button class="btn pri" data-a="followLater" data-id="${id}">${I.plus}Ajouter à « À voir »</button>`}
   ${p.next ? `<button class="btn ${s ? "pri" : ""}" data-a="watchNext" data-id="${id}" data-s="${p.next.s}" data-e="${p.next.e}">${I.check}${SE(p.next.s, p.next.e)}</button>` : ""}</div>
   ${p.aired ? `<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--mu)"><span>${p.watched} / ${plural(p.aired, "épisode")} vus · ${plural(nSeasons(t), "saison")}</span><span>${Math.round(p.watched / p.aired * 100)} %</span></div><div class="bar" style="height:6px"><i style="width:${p.watched / p.aired * 100}%"></i></div>` : ""}
@@ -1009,7 +1011,7 @@ async function setEps(id, list, val) {
     if (set.size) w[se] = [...set].sort((a, b) => a - b); else delete w[se];
   }
   const prev = store.data.shows.get(id);
-  await store.saveShow({ ...s, watched: w, status: val && s.status !== "watching" ? "watching" : s.status, lastWatchedAt: val ? Date.now() : (s.lastWatchedAt || null) });
+  await store.saveShow({ ...s, watched: w, status: val && s.status !== "watching" ? "watching" : s.status, statusManual: val ? false : (s.statusManual || false), lastWatchedAt: val ? Date.now() : (s.lastWatchedAt || null) });
   return prev;
 }
 async function setMovie(id, status) {
@@ -1109,7 +1111,7 @@ const A = {
     const id = +el.dataset.id; const s = store.data.shows.get(id);
     menu(esc(s.name), [
       ["watching", I.play, "En cours"], ["later", I.mark, "À voir"], ["stopped", I.stop, "Arrêtée (ne plus suivre)"]
-    ].map(([k, ic, l]) => ({ html: ic + l, cur: s.status === k, fn: () => store.saveShow({ ...s, status: k }) }))
+    ].map(([k, ic, l]) => ({ html: ic + l, cur: s.status === k, fn: () => store.saveShow({ ...s, status: k, statusManual: k !== "watching" }) }))
       .concat([{ html: I.trash + "Retirer de ma liste", bad: true, fn: () => confirm(`Retirer « ${s.name} » et son historique ?`) && store.deleteShow(id) }]));
   },
   async quick(el, ev) {
