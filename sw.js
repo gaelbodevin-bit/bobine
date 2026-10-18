@@ -1,5 +1,5 @@
 // Bobine — service worker : cache hors-ligne + notifications push
-const VERSION = "bobine-v13";
+const VERSION = "bobine-v14";
 const SHELL = [
   "./", "./index.html", "./manifest.webmanifest", "./css/app.css",
   "./js/app.js", "./js/config.js", "./js/tmdb.js", "./js/store.js", "./js/push.js", "./js/import-tvtime.js", "./js/rawg.js",
