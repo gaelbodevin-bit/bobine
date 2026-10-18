@@ -59,6 +59,10 @@ export async function testLocal() {
   return reg.showNotification("Bobine 🎬", { body: "Les notifications fonctionnent. Tu seras prévenu à chaque nouvel épisode.", icon: "icons/icon-192.png", badge: "icons/icon-192.png", tag: "test" });
 }
 
+export async function clearAll() {
+  setBadge(0);
+  try { const reg = await navigator.serviceWorker?.ready; (await reg?.getNotifications?.() || []).forEach(n => n.close()); } catch { }
+}
 export function setBadge(n) {
   try { if ("setAppBadge" in navigator) n > 0 ? navigator.setAppBadge(n) : navigator.clearAppBadge(); } catch { }
 }

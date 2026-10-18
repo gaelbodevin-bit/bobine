@@ -312,12 +312,12 @@ function vSeries(v) {
     v.innerHTML = top("Séries", "", toggle) + banners() + `
       <div class="empty">${I.tv}<h3>Aucune série suivie</h3><p>Ajoute tes séries depuis Explorer ou Suggestions, ou importe ton historique.</p>
       <div class="btns"><button class="btn pri" data-a="tab" data-v="explore">${I.search}Explorer</button><button class="btn" data-a="tab" data-v="profile">${I.up}Importer</button></div></div>`;
-    ui.badge = 0; push.setBadge(0); return;
+    ui.badge = 0; return;
   }
   const c = classify();
   const items = upNextItems(c);
   const freshN = items.filter(x => x.fresh).length;
-  ui.badge = freshN; push.setBadge(freshN);
+  ui.badge = freshN;
   const F = SERIES_F;
   let h = top("Séries", "", toggle) + banners();
   h += `<div class="chips">${F.map(([k, l]) => `<button class="chip ${ui.seriesFilter === k ? "on" : ""}" data-a="sfilter" data-v="${k}">${l}</button>`).join("")}</div>`;
@@ -1377,6 +1377,9 @@ window.addEventListener("load", () => {
   const m = location.hash.match(/^#(tv|mv|gm)-(\d+)/);
   if (m) { const id = +m[2]; history.replaceState(null, "", "#series"); const t = setInterval(() => { if (ui.mode === "app") { clearInterval(t); ({ tv: openTv, mv: openMovie, gm: openGame })[m[1]](id); } }, 150); setTimeout(() => clearInterval(t), 10000); }
 });
-document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && ui.mode === "app") { requested.clear(); later(); } });
+// Ouvrir l'app = notifications lues : on efface le badge de l'icône et les notifs du centre de notifications
+function clearNotifs() { push.clearAll(); }
+clearNotifs();
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { clearNotifs(); if (ui.mode === "app") { requested.clear(); later(); } } });
 
 boot();
