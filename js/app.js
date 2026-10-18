@@ -545,7 +545,7 @@ function vProfile(v, force) {
   <div class="btns">${u && !u.local ? `<button class="btn ghost" data-a="logout">Se déconnecter</button>` : ""}<button class="btn ghost danger" data-a="wipe">Tout effacer</button></div>
   ${u && !u.local ? `<div class="card"><h3>Supprimer mon compte</h3><p>Supprime définitivement ton compte et toutes tes données (séries, films, jeux, notifications). Pense à exporter une sauvegarde avant.</p>
     <div id="delzone"><button class="btn ghost danger" data-a="delAccount" style="width:100%">${I.trash}Supprimer mon compte</button></div></div>` : ""}
-  <div class="foot"><a href="privacy.html" target="_blank" rel="noopener">Politique de confidentialité</a> · <a href="delete-account.html" target="_blank" rel="noopener">Suppression des données</a></div>
+  <div class="foot"><a href="privacy.html" target="_blank" rel="noopener">Politique de confidentialité</a> · <a href="delete-account.html" target="_blank" rel="noopener">Suppression des données</a><br>Ce produit utilise l'API <a href="https://www.themoviedb.org" target="_blank" rel="noopener">TMDB</a> mais n'est ni approuvé ni certifié par TMDB. Jeux : <a href="https://rawg.io" target="_blank" rel="noopener">RAWG</a>.</div>
 `;
   $("#impfile").addEventListener("change", e => runImport([...e.target.files]));
   v.querySelectorAll("input[data-dom]").forEach(cb => cb.addEventListener("change", () => {
