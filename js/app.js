@@ -1,4 +1,4 @@
-// Bobine — suivi de séries & films (PWA)
+// Screendex — suivi de séries & films (PWA)
 import * as tmdb from "./tmdb.js";
 import * as store from "./store.js";
 import * as push from "./push.js";
@@ -239,7 +239,7 @@ function poster(s, t, sub, done) {
 function banners() {
   let h = "";
   if (push.isIOS && !push.isStandalone() && !localStorage.getItem("bobine:noinstall"))
-    h += `<div class="banner">${I.share}<div><b>Installe Bobine</b><br>Partager → « Sur l'écran d'accueil » pour l'app plein écran et les notifications.</div><button class="x" data-a="dismiss" data-v="noinstall">${I.x}</button></div>`;
+    h += `<div class="banner">${I.share}<div><b>Installe Screendex</b><br>Partager → « Sur l'écran d'accueil » pour l'app plein écran et les notifications.</div><button class="x" data-a="dismiss" data-v="noinstall">${I.x}</button></div>`;
   else if (ui.pushStatus === "off" && !localStorage.getItem("bobine:nopush"))
     h += `<div class="banner">${I.bell}<div><b>Nouveaux épisodes</b><br>Active les notifications pour être prévenu dès leur sortie.</div><button class="btn sm pri" data-a="pushOn">Activer</button><button class="x" data-a="dismiss" data-v="nopush">${I.x}</button></div>`;
   return h;
@@ -527,7 +527,7 @@ function vProfile(v, force) {
     <label class="colrow"><span>${I.film.replace("<svg", '<svg style="width:18px;height:18px;vertical-align:-4px;margin-right:8px"')}Films & séries</span><input type="checkbox" class="tgl" data-dom="av" ${ui.domains.av ? "checked" : ""}></label>
     <label class="colrow"><span>${I.pad.replace("<svg", '<svg style="width:18px;height:18px;vertical-align:-4px;margin-right:8px"')}Jeux vidéo</span><input type="checkbox" class="tgl" data-dom="games" ${ui.domains.games ? "checked" : ""}></label></div>
   <div class="card">${themeCard()}</div>
-  <div class="card"><h3>Importer mon historique</h3><p>Export <b>Binge Boxd</b> (le .zip, ou sélectionne tous les .csv du dossier), export RGPD <b>TV Time</b>, ou sauvegarde Bobine (.json).</p>
+  <div class="card"><h3>Importer mon historique</h3><p>Export <b>Binge Boxd</b> (le .zip, ou sélectionne tous les .csv du dossier), export RGPD <b>TV Time</b>, ou sauvegarde Screendex (.json).</p>
     <input type="file" id="impfile" accept=".zip,.csv,.json,application/zip,text/csv,application/json" multiple hidden>
     <button class="btn pri" data-a="impPick" style="width:100%">${I.up}Choisir le fichier</button><div id="impzone"></div></div>
 
@@ -579,8 +579,8 @@ function pushCard() {
   const [label, txt] = {
     on: ["Activées", "Tu reçois une notif à chaque nouvel épisode et à la sortie des films de ta liste « À voir »."],
     off: ["Désactivées", "Active-les pour être prévenu des nouveaux épisodes."],
-    denied: ["Bloquées", "Autorise Bobine dans Réglages iOS → Notifications → Bobine."],
-    install: ["Installe l'app d'abord", "Sur iPhone, les notifications ne marchent que depuis l'écran d'accueil : Partager → « Sur l'écran d'accueil », puis rouvre Bobine depuis l'icône."],
+    denied: ["Bloquées", "Autorise Screendex dans Réglages iOS → Notifications → Screendex."],
+    install: ["Installe l'app d'abord", "Sur iPhone, les notifications ne marchent que depuis l'écran d'accueil : Partager → « Sur l'écran d'accueil », puis rouvre Screendex depuis l'icône."],
     local: ["Indisponibles en mode local", "Configure Firebase (voir README) pour la synchro et les notifications."],
     noconfig: ["Non configurées", "Ajoute la clé VAPID publique dans js/config.js (voir README)."],
     unsupported: ["Non supportées", "Ce navigateur ne gère pas le Web Push."]
@@ -1155,7 +1155,7 @@ const A = {
     const json = JSON.stringify(store.exportJSON(), null, 1);
     const name = `bobine-${isoToday()}.json`;
     const file = new File([json], name, { type: "application/json" });
-    if (navigator.canShare?.({ files: [file] })) { try { await navigator.share({ files: [file], title: "Sauvegarde Bobine" }); return; } catch (e) { if (e.name === "AbortError") return; } }
+    if (navigator.canShare?.({ files: [file] })) { try { await navigator.share({ files: [file], title: "Sauvegarde Screendex" }); return; } catch (e) { if (e.name === "AbortError") return; } }
     const a = document.createElement("a"); a.href = URL.createObjectURL(file); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   },
   saveKey() { tmdb.setKey($("#tmdbk").value); requested.clear(); toast("Clé enregistrée"); ui.discover = null; },
@@ -1227,7 +1227,7 @@ async function runImport(files) {
 
   if (an.bobine) {
     const b = an.bobine;
-    log.textContent = `Sauvegarde Bobine du ${new Date(b.exportedAt).toLocaleString("fr-FR")}\n${plural(b.shows.length, "série")} · ${plural(b.movies.length, "film")}`;
+    log.textContent = `Sauvegarde Screendex du ${new Date(b.exportedAt).toLocaleString("fr-FR")}\n${plural(b.shows.length, "série")} · ${plural(b.movies.length, "film")}`;
     z.insertAdjacentHTML("beforeend", `<button class="btn pri" id="impgo" style="width:100%">Restaurer (fusion avec l'existant)</button>`);
     $("#impgo").onclick = async () => {
       const shows = b.shows.map(s => {
@@ -1304,12 +1304,12 @@ function toast(msg, action, fn) {
 
 // ═════════════ Écrans clé / auth ═════════════
 function bare(html) { $("#tabs").classList.add("hidden"); $("#view").innerHTML = `<div class="full">${html}</div>`; $("#view").style.padding = "0"; }
-const logo = `<div class="logo"><img src="icons/icon-192.png" alt=""><b>Bobine</b></div>`;
+const logo = `<div class="logo"><img src="icons/icon-192.png" alt=""><b>Screendex</b></div>`;
 
 function renderKey() {
   ui.mode = "key";
   bare(`${logo}<h2 style="margin:0 0 6px">Une dernière étape</h2>
-  <p>Bobine récupère les visuels, synopsis et dates de diffusion sur TMDB. Crée une clé gratuite sur <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener">themoviedb.org/settings/api</a> et colle-la ici (le « jeton d'accès en lecture » ou la « clé d'API »).</p>
+  <p>Screendex récupère les visuels, synopsis et dates de diffusion sur TMDB. Crée une clé gratuite sur <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener">themoviedb.org/settings/api</a> et colle-la ici (le « jeton d'accès en lecture » ou la « clé d'API »).</p>
   <input class="field" id="k" placeholder="eyJhbGciOi… ou clé v3" autocomplete="off" autocapitalize="off" spellcheck="false">
   <div class="err" id="kerr"></div><button class="btn pri" id="kgo">Continuer</button>`);
   $("#kgo").onclick = async () => {

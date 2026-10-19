@@ -49,38 +49,62 @@ async function loadFirebase() {
   const app = initializeApp(FIREBASE_CONFIG);
   const auth = au.initializeAuth(app, { persistence: [au.indexedDBLocalPersistence, au.browserLocalPersistence] });
   let db;
-  try { db = fs.initializeFirestore(app, { localCache: fs.persistentLocalCache() }); }
+  try { db = fs.initializeFirestore(app, { localCache: fs.persistentLocalCache({ cacheSizeBytes: fs.CACHE_SIZE_UNLIMITED }) }); }
   catch { db = fs.getFirestore(app); }
   fb = { app, auth, db, au, fs };
   return fb;
 }
 
 let unsubs = [];
-function subscribeUser(uid) {
+// Synchro différentielle : au démarrage on relit le cache local (gratuit), puis on n'écoute
+// que les documents modifiés depuis la dernière synchro (updatedAt). Les suppressions sont des
+// « pierres tombales » ({ deleted: true }) pour être propagées. Resynchro complète 1×/semaine.
+const SYNC_KEY = uid => `bobine:sync:${uid}`;
+const MARGIN = 10 * 60e3;          // tolérance d'horloge entre appareils
+const FULL_EVERY = 7 * 864e5;
+function syncMeta(uid) { try { return JSON.parse(localStorage.getItem(SYNC_KEY(uid)) || "{}"); } catch { return {}; } }
+function saveMeta(uid, m) { try { localStorage.setItem(SYNC_KEY(uid), JSON.stringify(m)); } catch { } }
+function applyDoc(map, d) {
+  const v = d.data();
+  if (!v || v.deleted) map.delete(+d.id); else map.set(+d.id, v);
+}
+async function syncCol(uid, col, map, onReady) {
   const { db, fs } = fb;
+  const ref = fs.collection(db, "users", uid, col);
+  const meta = syncMeta(uid);
+  let since = (meta[col] && Date.now() - (meta.full?.[col] || 0) < FULL_EVERY) ? meta[col] : 0;
+  if (since) {
+    try {
+      const snap = await fs.getDocsFromCache(ref);
+      if (!snap.size) since = 0; else snap.forEach(d => applyDoc(map, d));
+    } catch { since = 0; }
+    if (since) onReady();
+  }
+  const q = since ? fs.query(ref, fs.where("updatedAt", ">", since - MARGIN)) : ref;
+  const un = fs.onSnapshot(q, snap => {
+    snap.docChanges().forEach(c => { if (c.type === "removed") { if (!since) map.delete(+c.doc.id); } else applyDoc(map, c.doc); });
+    if (!snap.metadata.fromCache) {
+      let max = 0;
+      snap.docs.forEach(d => { const u = d.data().updatedAt || 0; if (u > max) max = u; });
+      map.forEach(v => { if ((v.updatedAt || 0) > max) max = v.updatedAt; });
+      const m = syncMeta(uid);
+      m[col] = Math.max(m[col] || 0, max);
+      if (!since) { m.full = m.full || {}; m.full[col] = Date.now(); }
+      saveMeta(uid, m);
+    }
+    onReady();
+  }, err => {
+    console.error(err);
+    if (since) { un(); const m = syncMeta(uid); delete m[col]; saveMeta(uid, m); syncCol(uid, col, map, onReady); }
+  });
+  unsubs.push(un);
+}
+function subscribeUser(uid) {
   unsubs.forEach(u => u()); unsubs = [];
   let gotS = false, gotM = false;
-  unsubs.push(fs.onSnapshot(fs.collection(db, "users", uid, "shows"), snap => {
-    snap.docChanges().forEach(c => {
-      if (c.type === "removed") state.shows.delete(+c.doc.id);
-      else state.shows.set(+c.doc.id, c.doc.data());
-    });
-    gotS = true; if (gotM) state.ready = true; emit();
-  }, err => console.error(err)));
-  unsubs.push(fs.onSnapshot(fs.collection(db, "users", uid, "movies"), snap => {
-    snap.docChanges().forEach(c => {
-      if (c.type === "removed") state.movies.delete(+c.doc.id);
-      else state.movies.set(+c.doc.id, c.doc.data());
-    });
-    gotM = true; if (gotS) state.ready = true; emit();
-  }, err => console.error(err)));
-  unsubs.push(fs.onSnapshot(fs.collection(db, "users", uid, "games"), snap => {
-    snap.docChanges().forEach(c => {
-      if (c.type === "removed") state.games.delete(+c.doc.id);
-      else state.games.set(+c.doc.id, c.doc.data());
-    });
-    state.gamesReady = true; emit();
-  }, err => console.error(err)));
+  syncCol(uid, "shows", state.shows, () => { gotS = true; if (gotM) state.ready = true; emit(); });
+  syncCol(uid, "movies", state.movies, () => { gotM = true; if (gotS) state.ready = true; emit(); });
+  syncCol(uid, "games", state.games, () => { state.gamesReady = true; emit(); });
 }
 
 // ═════════════════ Init / Auth ═════════════════
@@ -160,7 +184,7 @@ export async function deleteShow(id) {
   state.shows.delete(id); emit();
   if (state.user?.local) return localSave();
   const { db, fs } = fb;
-  return fs.deleteDoc(fs.doc(db, "users", state.user.uid, "shows", String(id)));
+  return fs.setDoc(fs.doc(db, "users", state.user.uid, "shows", String(id)), { id, deleted: true, updatedAt: Date.now() });
 }
 export async function saveMovie(m) {
   m = clean({ ...m, updatedAt: Date.now() });
@@ -173,7 +197,7 @@ export async function deleteMovie(id) {
   state.movies.delete(id); emit();
   if (state.user?.local) return localSave();
   const { db, fs } = fb;
-  return fs.deleteDoc(fs.doc(db, "users", state.user.uid, "movies", String(id)));
+  return fs.setDoc(fs.doc(db, "users", state.user.uid, "movies", String(id)), { id, deleted: true, updatedAt: Date.now() });
 }
 
 export async function saveGame(g) {
@@ -187,7 +211,7 @@ export async function deleteGame(id) {
   state.games.delete(id); emit();
   if (state.user?.local) return localSave();
   const { db, fs } = fb;
-  return fs.deleteDoc(fs.doc(db, "users", state.user.uid, "games", String(id)));
+  return fs.setDoc(fs.doc(db, "users", state.user.uid, "games", String(id)), { id, deleted: true, updatedAt: Date.now() });
 }
 
 // Écriture en masse (import) — lots de 400
@@ -234,6 +258,7 @@ export function exportJSON() {
 }
 export async function wipeAll() {
   const shows = [...state.shows.keys()], movies = [...state.movies.keys()], games = [...state.games.keys()];
+  if (!state.user?.local) { state.shows.clear(); state.movies.clear(); state.games.clear(); emit(); }
   if (state.user?.local) { state.shows.clear(); state.movies.clear(); state.games.clear(); emit(); return localSave(); }
   const { db, fs } = fb;
   const refs = [
@@ -242,6 +267,6 @@ export async function wipeAll() {
     ...games.map(id => fs.doc(db, "users", state.user.uid, "games", String(id)))
   ];
   for (let i = 0; i < refs.length; i += 400) {
-    const b = fs.writeBatch(db); refs.slice(i, i + 400).forEach(r => b.delete(r)); await b.commit();
+    const now = Date.now(); const b = fs.writeBatch(db); refs.slice(i, i + 400).forEach(r => b.set(r, { id: +r.id, deleted: true, updatedAt: now })); await b.commit();
   }
 }
