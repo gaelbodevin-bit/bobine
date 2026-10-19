@@ -1,4 +1,4 @@
-// Bobine — notifier (GitHub Actions, 2×/jour)
+// Screendex — notifier (GitHub Actions, 2×/jour)
 // Lit les séries/films de chaque utilisateur abonné aux push, interroge TMDB,
 // et envoie une notification pour chaque nouvel épisode / sortie de film.
 import { initializeApp, cert } from "firebase-admin/app";
@@ -74,7 +74,7 @@ async function send(subs, payload) {
 // ── Par utilisateur ──
 async function runUser(uid, subs) {
   if (TEST) {
-    await send(subs, { title: "Bobine 🎬", body: "Notification de test envoyée par le serveur. Tout fonctionne !", url: APP_URL + "#upnext", tag: "test" });
+    await send(subs, { title: "Screendex 🎬", body: "Notification de test envoyée par le serveur. Tout fonctionne !", url: APP_URL + "#upnext", tag: "test" });
     return;
   }
   const [showsSnap, moviesSnap] = await Promise.all([
@@ -85,7 +85,7 @@ async function runUser(uid, subs) {
 
   await Promise.all(showsSnap.docs.map(async d => {
     const show = d.data();
-    if (show.status === "stopped") return;
+    if (show.deleted || show.status === "stopped") return;
     try {
       const t = await tmdb(`/tv/${show.id}`);
       const la = t.last_episode_to_air;
@@ -112,7 +112,7 @@ async function runUser(uid, subs) {
           url: APP_URL + "#tv-" + show.id,
           tag: "tv-" + show.id
         },
-        mark: () => d.ref.update({ notified: [...already, ...todo.map(e => SE(e.season_number, e.episode_number))].slice(-60) })
+        mark: () => d.ref.update({ notified: [...already, ...todo.map(e => SE(e.season_number, e.episode_number))].slice(-60), updatedAt: Date.now() })
       });
     } catch (e) { console.warn(uid, show.id, e.message); }
   }));
@@ -134,7 +134,7 @@ async function runUser(uid, subs) {
         notes.push({
           kind: "movie", name: det.title,
           payload: { title: det.title, body: `${det.title} ${txt}`, image: det.backdrop_path ? IMG + "w780" + det.backdrop_path : undefined, icon: det.poster_path ? IMG + "w185" + det.poster_path : undefined, url: APP_URL + "#mv-" + m.id, tag: `mv-${m.id}-${k}` },
-          mark: () => d.ref.update({ notified: FieldValue.arrayUnion(k) })
+          mark: () => d.ref.update({ notified: FieldValue.arrayUnion(k), updatedAt: Date.now() })
         });
       }
     } catch (e) { console.warn(uid, "movie", m.id, e.message); }
@@ -153,7 +153,7 @@ async function runUser(uid, subs) {
     notes.push({
       kind: "game", name: g.name,
       payload: { title: g.name, body: `🎮 ${g.name} est sorti aujourd'hui !`, image: g.background_image || undefined, url: APP_URL + "#gm-" + g.id, tag: "gm-" + g.id },
-      mark: () => d.ref.update({ notifiedRelease: true, released })
+      mark: () => d.ref.update({ notifiedRelease: true, released, updatedAt: Date.now() })
     });
   }));
 
@@ -162,7 +162,7 @@ async function runUser(uid, subs) {
   if (notes.length > 4) {
     const names = notes.map(n => n.name);
     await send(subs, {
-      title: `${notes.length} nouveautés dans Bobine`,
+      title: `${notes.length} nouveautés dans Screendex`,
       body: names.slice(0, 5).join(", ") + (names.length > 5 ? ` et ${names.length - 5} autres` : ""),
       url: APP_URL + "#upnext", tag: "digest", badge
     });
