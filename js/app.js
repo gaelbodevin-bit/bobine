@@ -1162,15 +1162,15 @@ const A = {
   async refresh() { await tmdb.clearCache(); requested.clear(); details.clear(); seasons.clear(); movieD.clear(); ui.discover = null; toast("Cache vidé — rechargement des données"); renderView(); },
   async logout() { if (confirm("Se déconnecter ?")) { await push.disable().catch(() => { }); await store.signOut(); } },
   delAccount() {
-    const z = $("#delzone");
-    z.innerHTML = `<p style="color:var(--bad);font-size:14px;margin:0 0 8px">Action définitive. Confirme avec ton mot de passe :</p>
-      <input class="field" id="delpw" type="password" placeholder="Mot de passe" autocomplete="current-password">
+    const z = $("#delzone"), g = store.isGoogleUser();
+    z.innerHTML = `<p style="color:var(--bad);font-size:14px;margin:0 0 8px">Action définitive. ${g ? "Google va te demander de confirmer ton compte." : "Confirme avec ton mot de passe :"}</p>
+      ${g ? "" : `<input class="field" id="delpw" type="password" placeholder="Mot de passe" autocomplete="current-password">`}
       <div class="btns" style="margin:0"><button class="btn ghost" data-a="delCancel">Annuler</button><button class="btn danger" style="background:var(--bad);color:#fff" data-a="delConfirm">Supprimer définitivement</button></div><div class="err" id="delerr"></div>`;
-    $("#delpw").focus();
+    $("#delpw")?.focus();
   },
   delCancel() { renderView(true); },
   async delConfirm() {
-    const pw = $("#delpw").value; if (!pw) { $("#delerr").textContent = "Entre ton mot de passe."; return; }
+    const pw = $("#delpw")?.value || ""; if (!pw && !store.isGoogleUser()) { $("#delerr").textContent = "Entre ton mot de passe."; return; }
     $("#delerr").textContent = "Suppression en cours…";
     try { await push.disable().catch(() => { }); await store.deleteAccount(pw); toast("Compte supprimé. À bientôt !"); }
     catch (e) { $("#delerr").textContent = authErr(e); }
@@ -1325,6 +1325,8 @@ function renderAuth() {
   let signup = false;
   const draw = () => {
     bare(`${logo}<p style="margin:-10px 0 22px">Tes séries, tes films, tes épisodes — synchronisés et notifiés.</p>
+    <button class="btn gbtn" id="agoogle"><svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>Continuer avec Google</button>
+    <div class="orsep"><span>ou avec un email</span></div>
     <input class="field" id="em" type="email" placeholder="Email" autocomplete="email">
     <input class="field" id="pw" type="password" placeholder="Mot de passe${signup ? " (6 caractères min.)" : ""}" autocomplete="${signup ? "new-password" : "current-password"}">
     <div class="err" id="aerr"></div>
@@ -1332,6 +1334,10 @@ function renderAuth() {
     <button class="btn ghost" id="asw" style="margin-top:10px">${signup ? "J'ai déjà un compte" : "Créer un compte"}</button>
     ${signup ? "" : `<button id="arst" style="margin-top:16px;color:var(--mu);font-size:14px">Mot de passe oublié ?</button>`}`);
     $("#asw").onclick = () => { signup = !signup; draw(); };
+    $("#agoogle").onclick = async () => {
+      $("#aerr").textContent = "…";
+      try { await store.signInGoogle(); } catch (e) { $("#aerr").textContent = authErr(e); }
+    };
     $("#arst") && ($("#arst").onclick = async () => {
       const em = $("#em").value.trim(); if (!em) return $("#aerr").textContent = "Entre ton email d'abord.";
       try { await store.resetPassword(em); $("#aerr").style.color = "var(--ok)"; $("#aerr").textContent = "Email de réinitialisation envoyé."; } catch (e) { $("#aerr").textContent = authErr(e); }
@@ -1350,7 +1356,11 @@ const authErr = e => ({
   "auth/invalid-credential": "Email ou mot de passe incorrect.", "auth/wrong-password": "Mot de passe incorrect.",
   "auth/user-not-found": "Aucun compte avec cet email.", "auth/email-already-in-use": "Un compte existe déjà avec cet email.",
   "auth/weak-password": "Mot de passe trop court (6 caractères min.).", "auth/invalid-email": "Email invalide.",
-  "auth/too-many-requests": "Trop d'essais, réessaie dans quelques minutes.", "auth/network-request-failed": "Pas de connexion."
+  "auth/too-many-requests": "Trop d'essais, réessaie dans quelques minutes.", "auth/network-request-failed": "Pas de connexion.",
+  "auth/popup-closed-by-user": "Connexion Google annulée.", "auth/cancelled-popup-request": "Connexion Google annulée.",
+  "auth/account-exists-with-different-credential": "Un compte existe déjà avec cet email : connecte-toi avec ton mot de passe.",
+  "auth/unauthorized-domain": "Connexion Google pas encore autorisée pour ce site.", "auth/operation-not-allowed": "Connexion Google pas encore activée.",
+  "auth/user-mismatch": "Choisis le même compte Google que celui connecté."
 }[e.code] || e.message);
 
 // ═════════════ Démarrage ═════════════

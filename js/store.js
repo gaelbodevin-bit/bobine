@@ -47,7 +47,7 @@ async function loadFirebase() {
     import(FB + "firebase-firestore.js")
   ]);
   const app = initializeApp(FIREBASE_CONFIG);
-  const auth = au.initializeAuth(app, { persistence: [au.indexedDBLocalPersistence, au.browserLocalPersistence] });
+  const auth = au.initializeAuth(app, { persistence: [au.indexedDBLocalPersistence, au.browserLocalPersistence], popupRedirectResolver: au.browserPopupRedirectResolver });
   let db;
   try { db = fs.initializeFirestore(app, { localCache: fs.persistentLocalCache({ cacheSizeBytes: fs.CACHE_SIZE_UNLIMITED }) }); }
   catch { db = fs.getFirestore(app); }
@@ -143,6 +143,19 @@ export async function signUp(email, pass) {
   await loadFirebase();
   return fb.au.createUserWithEmailAndPassword(fb.auth, email, pass);
 }
+// Connexion Google : popup (fallback redirection si la popup est impossible, ex. certaines webviews)
+export async function signInGoogle() {
+  await loadFirebase();
+  const p = new fb.au.GoogleAuthProvider();
+  p.setCustomParameters({ prompt: "select_account" });
+  try { return await fb.au.signInWithPopup(fb.auth, p); }
+  catch (e) {
+    if (["auth/popup-blocked", "auth/operation-not-supported-in-this-environment", "auth/web-storage-unsupported"].includes(e.code)) return fb.au.signInWithRedirect(fb.auth, p);
+    throw e;
+  }
+}
+export async function finishRedirect() { try { await loadFirebase(); return await fb.au.getRedirectResult(fb.auth); } catch (e) { return { error: e }; } }
+export function isGoogleUser() { return !!fb?.auth.currentUser?.providerData?.some(x => x.providerId === "google.com") && !fb.auth.currentUser.providerData.some(x => x.providerId === "password"); }
 export async function resetPassword(email) {
   await loadFirebase();
   return fb.au.sendPasswordResetEmail(fb.auth, email);
@@ -153,6 +166,7 @@ export async function deleteAccount(password) {
   const { db, fs, au, auth } = fb;
   const u = auth.currentUser;
   if (password) await au.reauthenticateWithCredential(u, au.EmailAuthProvider.credential(u.email, password));
+  else if (u.providerData.some(x => x.providerId === "google.com")) await au.reauthenticateWithPopup(u, new au.GoogleAuthProvider());
   const uid = u.uid;
   unsubs.forEach(x => x()); unsubs = [];
   for (const col of ["shows", "movies", "games", "push"]) {
