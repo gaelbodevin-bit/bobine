@@ -1,5 +1,5 @@
-// Bobine — service worker : cache hors-ligne + notifications push
-const VERSION = "bobine-v16";
+// Screendex — service worker : cache hors-ligne + notifications push
+const VERSION = "bobine-v17";
 const SHELL = [
   "./", "./index.html", "./manifest.webmanifest", "./css/app.css",
   "./js/app.js", "./js/config.js", "./js/tmdb.js", "./js/store.js", "./js/push.js", "./js/import-tvtime.js", "./js/rawg.js",
@@ -63,8 +63,8 @@ async function trim(c) {
 // ── Push ──
 self.addEventListener("push", e => {
   let d = {};
-  try { d = e.data ? e.data.json() : {}; } catch { d = { title: "Bobine", body: e.data && e.data.text() }; }
-  const title = d.title || "Bobine";
+  try { d = e.data ? e.data.json() : {}; } catch { d = { title: "Screendex", body: e.data && e.data.text() }; }
+  const title = d.title || "Screendex";
   const opts = {
     body: d.body || "",
     icon: d.icon || "icons/icon-192.png",
