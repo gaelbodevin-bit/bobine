@@ -1,6 +1,6 @@
 {
-  "name": "Bobine — séries, films & jeux",
-  "short_name": "Bobine",
+  "name": "Screendex — séries, films & jeux",
+  "short_name": "Screendex",
   "description": "Suis tes séries, films et jeux vidéo : épisodes vus, prochaines sorties, notifications.",
   "lang": "fr",
   "start_url": "./#series",
