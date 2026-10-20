@@ -304,4 +304,6 @@ img{display:block;max-width:100%}
 .memo textarea:focus{outline:none;border-color:var(--ac)}
 /* Pastille sur l'onglet « À jouer » */
 .chip .dot{font-style:normal;display:inline-grid;place-items:center;min-width:18px;height:18px;border-radius:9px;background:var(--ac);color:var(--ac-tx);font-size:11px;font-weight:800;margin-left:6px;padding:0 4px}
-.gp .t.tse,.li .n.tse{display:flex;-webkit-line-clamp:unset}
+.li .n.tse{display:flex;-webkit-line-clamp:unset}
+
+.gp .se{font-size:11px;font-weight:700;color:var(--ac);margin-top:2px;font-variant-numeric:tabular-nums}
