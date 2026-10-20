@@ -365,7 +365,7 @@ function vSeries(v) {
       const p = x.t ? progress(x.s, x.t) : null;
       const pct = p?.aired ? Math.round(p.watched / p.aired * 100) : 0;
       const fresh = x.fresh;
-      return `<button class="gp ${fresh ? "fresh" : ""}" data-a="tv" data-id="${x.s.id}"><div class="p">${pimg(x.t?.poster_path || x.s.poster_path, x.t?.name || x.s.name)}${fresh ? `<span class="newb">NOUVEL ÉP.</span>` : ""}${pct === 100 ? `<span class="badge">${I.check}</span>` : ""}${pct && pct < 100 ? `<div class="pbar"><i style="width:${pct}%"></i></div>` : ""}</div><div class="t tse"><span>${esc(x.t?.name || x.s.name)}</span>${seTag(p)}</div></button>`;
+      return `<button class="gp ${fresh ? "fresh" : ""}" data-a="tv" data-id="${x.s.id}"><div class="p">${pimg(x.t?.poster_path || x.s.poster_path, x.t?.name || x.s.name)}${fresh ? `<span class="newb">NOUVEL ÉP.</span>` : ""}${pct === 100 ? `<span class="badge">${I.check}</span>` : ""}${pct && pct < 100 ? `<div class="pbar"><i style="width:${pct}%"></i></div>` : ""}</div><div class="t">${esc(x.t?.name || x.s.name)}</div>${p?.next && p.watched > 0 ? `<div class="se">S${p.next.s} E${p.next.e}</div>` : ""}</button>`;
     }).join("")}</div>`;
   }
   v.innerHTML = h;
