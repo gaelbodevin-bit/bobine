@@ -182,8 +182,17 @@ for (const d of pushSnap.docs) {
   byUser.get(uid).push({ ref: d.ref, data: d.data() });
 }
 console.log(`${TODAY} — ${byUser.size} utilisateur(s), ${pushSnap.size} appareil(s), fenêtre depuis ${SINCE}${TEST ? " [TEST]" : ""}`);
+// Notifications = fonction Premium : on ignore les comptes sans droit actif (le mode test reste ouvert à tous)
+let skipped = 0;
 for (const [uid, subs] of byUser) {
-  try { await runUser(uid, subs); } catch (e) { console.error(uid, e); }
+  try {
+    if (!TEST) {
+      const ent = await db.doc(`entitlements/${uid}`).get();
+      if (!ent.data()?.premium) { skipped++; continue; }
+    }
+    await runUser(uid, subs);
+  } catch (e) { console.error(uid, e); }
 }
+if (skipped) console.log(`${skipped} compte(s) sans Premium ignoré(s)`);
 console.log(`Envoyées : ${sent}, abonnements expirés supprimés : ${dead}`);
 process.exit(0);
