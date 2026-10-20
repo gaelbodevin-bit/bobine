@@ -18,9 +18,10 @@ li{margin:4px 0} .logo{display:flex;align-items:center;gap:10px;margin-bottom:22
 <li><b>Compte</b> : ton adresse e-mail et ton mot de passe (le mot de passe est géré par Firebase Authentication et n'est jamais visible par l'éditeur). Si tu choisis « Continuer avec Google », Google transmet uniquement ton adresse e-mail, ton nom et ton identifiant de compte Google ; aucun mot de passe n'est transmis.</li>
 <li><b>Contenu de ton suivi</b> : séries, épisodes vus, films, jeux vidéo, statuts, notes que tu attribues, dates d'ajout et de visionnage.</li>
 <li><b>Notifications</b> : si tu les actives, un identifiant d'abonnement technique (adresse d'envoi fournie par ton navigateur ou ton téléphone) et ton fuseau horaire.</li>
+<li><b>Achat Premium</b> (facultatif) : le paiement est traité par <b>Google Play</b> (application Android) ou <b>Stripe</b> (iPhone et web). Screendex ne voit jamais tes coordonnées bancaires ; seuls la confirmation d'achat, sa référence, son montant et l'adresse e-mail de paiement sont conservés pour activer et justifier ton accès Premium.</li>
 <li><b>Préférences d'affichage</b> (thème, couleurs, onglets) : stockées uniquement sur ton appareil.</li>
 </ul></div>
-<p>Screendex ne contient <b>aucune publicité</b>, <b>aucun outil de mesure d'audience</b> et ne vend ni ne partage tes données à des fins commerciales. Aucune donnée de localisation, de contacts, de photos ou de paiement n'est collectée.</p>
+<p>Screendex ne contient <b>aucune publicité</b>, <b>aucun outil de mesure d'audience</b> et ne vend ni ne partage tes données à des fins commerciales. Aucune donnée de localisation, de contacts ou de photos n'est collectée, et aucune coordonnée bancaire n'est stockée par Screendex.</p>
 <h2>Finalités</h2><ul>
 <li>Synchroniser ton suivi entre tes appareils.</li>
 <li>T'envoyer, si tu l'as demandé, une notification quand un nouvel épisode, un film ou un jeu de ta liste sort.</li></ul>
@@ -28,9 +29,11 @@ li{margin:4px 0} .logo{display:flex;align-items:center;gap:10px;margin-bottom:22
 <h2>Hébergement et sous-traitants</h2><ul>
 <li><b>Google Firebase</b> (Authentication et Cloud Firestore) — données hébergées dans l'Union européenne (région Paris, europe-west9).</li>
 <li><b>GitHub Pages</b> — hébergement du code de l'application.</li>
-<li><b>GitHub Actions</b> — envoi automatique des notifications.</li></ul>
+<li><b>GitHub Actions</b> — envoi automatique des notifications.</li>
+<li><b>Google Cloud Functions</b> (Union européenne) — vérification des achats Premium.</li>
+<li><b>Google Play</b> et <b>Stripe</b> — traitement des paiements Premium.</li></ul>
 <p>Pour afficher les affiches, résumés et dates de sortie, ton appareil interroge directement <b>The Movie Database (TMDB)</b> et <b>RAWG</b>. Ces services reçoivent tes recherches et ton adresse IP comme pour tout site web, mais aucune information de ton compte Screendex.</p>
-<h2>Durée de conservation</h2><p>Tes données sont conservées tant que ton compte existe. Elles sont effacées définitivement dès que tu supprimes ton compte.</p>
+<h2>Durée de conservation</h2><p>Tes données sont conservées tant que ton compte existe. Elles sont effacées définitivement dès que tu supprimes ton compte, à l'exception de la référence d'achat Premium, conservée pendant la durée légale de conservation des pièces comptables (10 ans).</p>
 <h2>Tes droits</h2><p>Tu peux à tout moment accéder à tes données, les exporter (Profil → Sauvegarde → Exporter mes données), les corriger ou les supprimer. Tu disposes aussi d'un droit d'opposition et de limitation. Pour toute demande : <a href="mailto:bluecellproduction@gmail.com">bluecellproduction@gmail.com</a>. Tu peux introduire une réclamation auprès de la CNIL (<a href="https://www.cnil.fr">cnil.fr</a>).</p>
 <h2>Suppression du compte</h2><p>Dans l'application : <b>Profil → Supprimer mon compte</b>. Toutes les étapes sont détaillées sur la page <a href="delete-account.html">Suppression des données</a>.</p>
 <h2>Mineurs</h2><p>Screendex ne s'adresse pas spécifiquement aux enfants de moins de 13 ans et ne collecte pas sciemment leurs données.</p>
