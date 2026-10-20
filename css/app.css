@@ -194,9 +194,9 @@ img{display:block;max-width:100%}
 
 /* Écrans plein (auth, clé) */
 .full{min-height:100dvh;display:flex;flex-direction:column;justify-content:center;padding:calc(var(--st) + 20px) 24px calc(var(--sb) + 20px);max-width:440px;margin:0 auto}
-.logo{display:flex;align-items:center;gap:12px;margin-bottom:26px}
-.logo img{width:56px;height:56px;border-radius:14px}
-.logo b{font-size:32px;letter-spacing:-.03em}
+.logo{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:22px}
+.logo img{width:40px;height:40px;border-radius:10px}
+.logo b{font-size:26px;letter-spacing:-.03em}
 .full p{color:var(--mu)}
 .err{color:var(--bad);font-size:14px;min-height:20px}
 
@@ -250,3 +250,58 @@ img{display:block;max-width:100%}
 .btn.gbtn{background:#fff;color:#1f1f1f;display:flex;align-items:center;justify-content:center;gap:10px;font-weight:600}
 .orsep{display:flex;align-items:center;gap:10px;color:var(--mu);font-size:13px;margin:16px 0 12px}
 .orsep::before,.orsep::after{content:"";flex:1;height:1px;background:var(--s3)}
+
+/* Premium */
+.ptag{display:inline-flex;align-items:center;gap:4px;margin-left:8px;padding:2px 8px;border-radius:99px;background:var(--ac);color:var(--ac-tx);font-size:11px;font-weight:700;letter-spacing:.02em;vertical-align:2px;text-transform:none}
+.ptag svg{width:12px;height:12px}
+.card h3 svg,.pcard h3 svg{width:18px;height:18px;vertical-align:-3px;margin-right:6px;color:var(--ac)}
+.btn svg{width:18px;height:18px}
+.pcard{border:1px solid color-mix(in srgb,var(--ac) 45%,transparent);background:linear-gradient(160deg,color-mix(in srgb,var(--ac) 14%,var(--s1)),var(--s1));cursor:pointer}
+.pcard.on{cursor:default}
+.locked{cursor:pointer;position:relative}
+.ghostbars{display:grid;gap:7px;margin:4px 0 12px;filter:blur(1.5px);opacity:.55}
+.ghostbars i{display:block;height:10px;border-radius:5px;background:var(--s3)}
+.pw{text-align:center;padding-top:calc(var(--st) + 56px)}
+.pw h2{font-size:26px;margin:6px 0 4px}
+.pwhero svg{width:54px;height:54px;color:var(--ac)}
+.pwsub{color:var(--mu);margin:0 0 16px}
+.perks{display:grid;gap:10px;text-align:left}
+.perk{display:flex;gap:12px;align-items:flex-start;background:var(--s2);border-radius:var(--r);padding:12px 14px;border:1px solid transparent}
+.perk.hi{border-color:var(--ac)}
+.perk svg{width:22px;height:22px;flex:none;color:var(--ac);margin-top:2px}
+.perk b{display:block}.perk span{color:var(--mu);font-size:14px}
+.btn.big{padding:16px;font-size:17px}
+.pwlegal{color:var(--mu2);font-size:12px;margin:14px 0 0}
+.stats.mini{grid-template-columns:repeat(auto-fit,minmax(90px,1fr));margin-bottom:6px}
+.stats.mini .stat{background:var(--s2)}
+.stats.mini .stat b{font-size:22px}
+.ast{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);margin:18px 0 8px}
+.ast2{margin:0 0 8px;color:var(--mu)}
+.bars{display:grid;gap:7px}
+.br{display:grid;grid-template-columns:minmax(0,38%) 1fr auto;gap:10px;align-items:center;font-size:14px}
+.bl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bt{height:8px;border-radius:4px;background:var(--s3);overflow:hidden}
+.bt i{display:block;height:100%;border-radius:4px;background:var(--ac)}
+.br b{font-size:13px;font-variant-numeric:tabular-nums}
+.card h3 .ptag svg{color:var(--ac-tx);margin:0;width:12px;height:12px;vertical-align:0}
+
+/* Auth centré */
+.full > p:first-of-type{text-align:center}
+/* S·E à droite du titre */
+.tse{display:flex;align-items:baseline;justify-content:space-between;gap:6px;min-width:0}
+.tse span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tse em{font-style:normal;font-size:11px;font-weight:700;color:var(--ac);white-space:nowrap;flex:none;font-variant-numeric:tabular-nums}
+/* Films : roulette + bandeau sortie */
+.segrow{display:flex;gap:10px;align-items:center;margin-bottom:14px}.segrow .seg{flex:1;margin:0}
+.roul svg{width:22px;height:22px}.roul.spin svg{animation:spin .65s cubic-bezier(.3,.7,.4,1)}
+@keyframes spin{to{transform:rotate(540deg)}}
+.tagnew{font-size:10px;font-weight:800;background:var(--ac);color:var(--ac-tx);border-radius:6px;padding:1px 6px;vertical-align:2px}
+/* Mémo perso */
+.memo{margin:14px 0 4px}
+.memo label{display:flex;align-items:center;gap:6px;color:var(--mu);font-size:13px;margin-bottom:6px}
+.memo label svg{width:15px;height:15px}
+.memo textarea{width:100%;box-sizing:border-box;background:var(--s2);color:var(--tx);border:1px solid var(--s3);border-radius:12px;padding:10px 12px;font:inherit;font-size:15px;resize:vertical;min-height:70px}
+.memo textarea:focus{outline:none;border-color:var(--ac)}
+/* Pastille sur l'onglet « À jouer » */
+.chip .dot{font-style:normal;display:inline-grid;place-items:center;min-width:18px;height:18px;border-radius:9px;background:var(--ac);color:var(--ac-tx);font-size:11px;font-weight:800;margin-left:6px;padding:0 4px}
+.gp .t.tse,.li .n.tse{display:flex;-webkit-line-clamp:unset}
