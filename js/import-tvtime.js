@@ -1,4 +1,4 @@
-// Import de l'export RGPD TV Time (zip ou CSV/JSON) + sauvegarde Screendex.
+// Import de l'export RGPD TV Time (zip ou CSV/JSON) + sauvegarde Playwatch.
 // Les noms de colonnes TV Time ont changé au fil des années : détection par alias.
 import * as tmdb from "./tmdb.js";
 
@@ -126,7 +126,7 @@ export async function analyze(files, onFile) {
     try {
       if (/\.json$/i.test(base)) {
         const j = JSON.parse(text);
-        if (j && j.app === "bobine") { bobine = j; report.push({ file: base, kind: "Sauvegarde Screendex", n: (j.shows?.length || 0) + (j.movies?.length || 0) }); continue; }
+        if (j && j.app === "bobine") { bobine = j; report.push({ file: base, kind: "Sauvegarde Playwatch", n: (j.shows?.length || 0) + (j.movies?.length || 0) }); continue; }
         rows = rowsFromJSON(j);
       } else rows = parseCSV(text);
     } catch (e) { report.push({ file: base, kind: "illisible", n: 0 }); continue; }

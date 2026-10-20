@@ -56,7 +56,7 @@ export async function refresh() {
 
 export async function testLocal() {
   const reg = await navigator.serviceWorker.ready;
-  return reg.showNotification("Screendex 🎬", { body: "Les notifications fonctionnent. Tu seras prévenu à chaque nouvel épisode.", icon: "icons/icon-192.png", badge: "icons/icon-192.png", tag: "test" });
+  return reg.showNotification("Playwatch 🎬", { body: "Les notifications fonctionnent. Tu seras prévenu à chaque nouvel épisode.", icon: "icons/icon-192.png", badge: "icons/icon-192.png", tag: "test" });
 }
 
 export async function clearAll() {

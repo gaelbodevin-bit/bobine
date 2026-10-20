@@ -1,4 +1,4 @@
-// Screendex — suivi de séries & films (PWA)
+// Playwatch — suivi de séries & films (PWA)
 import * as tmdb from "./tmdb.js";
 import * as store from "./store.js";
 import * as push from "./push.js";
@@ -247,7 +247,7 @@ function poster(s, t, sub, done) {
 function banners() {
   let h = "";
   if (push.isIOS && !push.isStandalone() && !localStorage.getItem("bobine:noinstall"))
-    h += `<div class="banner">${I.share}<div><b>Installe Screendex</b><br>Partager → « Sur l'écran d'accueil » pour l'app plein écran et les notifications.</div><button class="x" data-a="dismiss" data-v="noinstall">${I.x}</button></div>`;
+    h += `<div class="banner">${I.share}<div><b>Installe Playwatch</b><br>Partager → « Sur l'écran d'accueil » pour l'app plein écran et les notifications.</div><button class="x" data-a="dismiss" data-v="noinstall">${I.x}</button></div>`;
   else if (ui.pushStatus === "off" && !localStorage.getItem("bobine:nopush"))
     h += `<div class="banner">${I.bell}<div><b>Nouveaux épisodes</b><br>Active les notifications pour être prévenu dès leur sortie.</div><button class="btn sm pri" data-a="pushOn">Activer</button><button class="x" data-a="dismiss" data-v="nopush">${I.x}</button></div>`;
   return h;
@@ -542,7 +542,7 @@ function vProfile(v, force) {
     <label class="colrow"><span>${I.film.replace("<svg", '<svg style="width:18px;height:18px;vertical-align:-4px;margin-right:8px"')}Films & séries</span><input type="checkbox" class="tgl" data-dom="av" ${ui.domains.av ? "checked" : ""}></label>
     <label class="colrow"><span>${I.pad.replace("<svg", '<svg style="width:18px;height:18px;vertical-align:-4px;margin-right:8px"')}Jeux vidéo</span><input type="checkbox" class="tgl" data-dom="games" ${ui.domains.games ? "checked" : ""}></label></div>
   <div class="card">${themeCard()}</div>
-  <div class="card"><h3>Importer mon historique${premium.isPremium() ? "" : lockTag()}</h3><p>Export <b>Binge Boxd</b> (le .zip, ou sélectionne tous les .csv du dossier), export RGPD <b>TV Time</b>, ou sauvegarde Screendex (.json).</p>
+  <div class="card"><h3>Importer mon historique${premium.isPremium() ? "" : lockTag()}</h3><p>Export <b>Binge Boxd</b> (le .zip, ou sélectionne tous les .csv du dossier), export RGPD <b>TV Time</b>, ou sauvegarde Playwatch (.json).</p>
     <input type="file" id="impfile" accept=".zip,.csv,.json,application/zip,text/csv,application/json" multiple hidden>
     <button class="btn pri" data-a="impPick" style="width:100%">${I.up}Choisir le fichier</button><div id="impzone"></div></div>
 
@@ -594,8 +594,8 @@ function pushCard() {
   const [label, txt] = {
     on: ["Activées", "Tu reçois une notif à chaque nouvel épisode et à la sortie des films de ta liste « À voir »."],
     off: ["Désactivées", "Active-les pour être prévenu des nouveaux épisodes."],
-    denied: ["Bloquées", "Autorise Screendex dans Réglages iOS → Notifications → Screendex."],
-    install: ["Installe l'app d'abord", "Sur iPhone, les notifications ne marchent que depuis l'écran d'accueil : Partager → « Sur l'écran d'accueil », puis rouvre Screendex depuis l'icône."],
+    denied: ["Bloquées", "Autorise Playwatch dans Réglages iOS → Notifications → Playwatch."],
+    install: ["Installe l'app d'abord", "Sur iPhone, les notifications ne marchent que depuis l'écran d'accueil : Partager → « Sur l'écran d'accueil », puis rouvre Playwatch depuis l'icône."],
     local: ["Indisponibles en mode local", "Configure Firebase (voir README) pour la synchro et les notifications."],
     noconfig: ["Non configurées", "Ajoute la clé VAPID publique dans js/config.js (voir README)."],
     unsupported: ["Non supportées", "Ce navigateur ne gère pas le Web Push."]
@@ -614,7 +614,7 @@ function lockedCard(title, txt) {
 }
 function premiumCard() {
   const u = store.data.user; if (!u || u.local) return "";
-  if (premium.isPremium()) return `<div class="card pcard on"><h3>${I.crown}Screendex Premium</h3><p>Merci pour ton soutien ! Toutes les fonctions sont débloquées, à vie, sur tous tes appareils.</p></div>`;
+  if (premium.isPremium()) return `<div class="card pcard on"><h3>${I.crown}Playwatch Premium</h3><p>Merci pour ton soutien ! Toutes les fonctions sont débloquées, à vie, sur tous tes appareils.</p></div>`;
   return `<div class="card pcard" data-a="paywall" data-v="card"><h3>${I.crown}Passe à Premium</h3><p>Notifications, statistiques avancées, thèmes et import d'historique. Un seul paiement, à vie.</p>
     <button class="btn pri" style="width:100%">Découvrir Premium</button></div>`;
 }
@@ -629,7 +629,7 @@ function openPaywall(why) {
   const sh = openSheet(sh => {
     if (premium.isPremium()) return `<div class="body pw"><div class="pwhero">${I.crown}</div><h2>Premium activé</h2><p class="pwsub">Tout est débloqué. Merci !</p><button class="btn pri" data-a="closeSheet" style="width:100%">Continuer</button></div>`;
     const ch = premium.channel();
-    return `<div class="body pw"><div class="pwhero">${I.crown}</div><h2>Screendex Premium</h2>
+    return `<div class="body pw"><div class="pwhero">${I.crown}</div><h2>Playwatch Premium</h2>
       <p class="pwsub">Un seul paiement, débloqué à vie sur tous tes appareils.</p>
       <div class="perks">${PERKS.map(([k, ic, t, d]) => `<div class="perk ${k === why ? "hi" : ""}">${ic}<div><b>${t}</b><span>${d}</span></div></div>`).join("")}</div>
       ${ch === "none" ? `<p class="pwsub" style="margin-top:18px">Le paiement arrive bientôt sur cet appareil.</p>` :
@@ -1199,7 +1199,7 @@ const A = {
   paywall: el => openPaywall(el.dataset.v),
   async buyPremium(el) {
     el.disabled = true; const t = el.innerHTML; el.textContent = "…";
-    try { const r = await premium.buy(); if (r === "done") { toast("Bienvenue dans Screendex Premium ✨"); closeAllSheets(); } }
+    try { const r = await premium.buy(); if (r === "done") { toast("Bienvenue dans Playwatch Premium ✨"); closeAllSheets(); } }
     catch (e) { if (e.name !== "AbortError") toast(e.message || "Paiement interrompu"); }
     el.disabled = false; el.innerHTML = t;
   },
@@ -1305,7 +1305,7 @@ const A = {
     const json = JSON.stringify(store.exportJSON(), null, 1);
     const name = `bobine-${isoToday()}.json`;
     const file = new File([json], name, { type: "application/json" });
-    if (navigator.canShare?.({ files: [file] })) { try { await navigator.share({ files: [file], title: "Sauvegarde Screendex" }); return; } catch (e) { if (e.name === "AbortError") return; } }
+    if (navigator.canShare?.({ files: [file] })) { try { await navigator.share({ files: [file], title: "Sauvegarde Playwatch" }); return; } catch (e) { if (e.name === "AbortError") return; } }
     const a = document.createElement("a"); a.href = URL.createObjectURL(file); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   },
   saveKey() { tmdb.setKey($("#tmdbk").value); requested.clear(); toast("Clé enregistrée"); ui.discover = null; },
@@ -1377,7 +1377,7 @@ async function runImport(files) {
 
   if (an.bobine) {
     const b = an.bobine;
-    log.textContent = `Sauvegarde Screendex du ${new Date(b.exportedAt).toLocaleString("fr-FR")}\n${plural(b.shows.length, "série")} · ${plural(b.movies.length, "film")}`;
+    log.textContent = `Sauvegarde Playwatch du ${new Date(b.exportedAt).toLocaleString("fr-FR")}\n${plural(b.shows.length, "série")} · ${plural(b.movies.length, "film")}`;
     z.insertAdjacentHTML("beforeend", `<button class="btn pri" id="impgo" style="width:100%">Restaurer (fusion avec l'existant)</button>`);
     $("#impgo").onclick = async () => {
       const shows = b.shows.map(s => {
@@ -1454,12 +1454,12 @@ function toast(msg, action, fn, ms) {
 
 // ═════════════ Écrans clé / auth ═════════════
 function bare(html) { $("#tabs").classList.add("hidden"); $("#view").innerHTML = `<div class="full">${html}</div>`; $("#view").style.padding = "0"; }
-const logo = `<div class="logo"><img src="icons/icon-192.png" alt=""><b>Screendex</b></div>`;
+const logo = `<div class="logo"><img src="icons/icon-192.png" alt=""><b>Playwatch</b></div>`;
 
 function renderKey() {
   ui.mode = "key";
   bare(`${logo}<h2 style="margin:0 0 6px">Une dernière étape</h2>
-  <p>Screendex récupère les visuels, synopsis et dates de diffusion sur TMDB. Crée une clé gratuite sur <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener">themoviedb.org/settings/api</a> et colle-la ici (le « jeton d'accès en lecture » ou la « clé d'API »).</p>
+  <p>Playwatch récupère les visuels, synopsis et dates de diffusion sur TMDB. Crée une clé gratuite sur <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener">themoviedb.org/settings/api</a> et colle-la ici (le « jeton d'accès en lecture » ou la « clé d'API »).</p>
   <input class="field" id="k" placeholder="eyJhbGciOi… ou clé v3" autocomplete="off" autocapitalize="off" spellcheck="false">
   <div class="err" id="kerr"></div><button class="btn pri" id="kgo">Continuer</button>`);
   $("#kgo").onclick = async () => {

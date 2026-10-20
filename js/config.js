@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────
-//  Screendex — configuration
+//  Playwatch — configuration
 //  Remplis ces 3 blocs (voir README.md). Tout le reste est prêt.
 // ─────────────────────────────────────────────────────────────
 

@@ -1,4 +1,4 @@
-// Screendex Premium — achat unique à vie.
+// Playwatch Premium — achat unique à vie.
 //  • Android (app Play Store / TWA) : Google Play Billing via la Digital Goods API (obligatoire sur Play)
 //  • iPhone / web : Stripe (Payment Link), le serveur reçoit le webhook et active le droit
 // Le droit est stocké dans Firestore (entitlements/{uid}) et n'est modifiable que par le serveur.
@@ -43,7 +43,7 @@ export async function buy() {
     const [d] = await svc.getDetails([PRODUCT]);
     if (!d) throw new Error("Produit introuvable sur Google Play.");
     const req = new PaymentRequest([{ supportedMethods: PLAY, data: { sku: PRODUCT } }],
-      { total: { label: "Screendex Premium", amount: { currency: d.price.currency, value: d.price.value } } });
+      { total: { label: "Playwatch Premium", amount: { currency: d.price.currency, value: d.price.value } } });
     const res = await req.show();
     try {
       await store.callFn("verifyPlayPurchase", { purchaseToken: res.details.purchaseToken, productId: PRODUCT });
@@ -61,7 +61,7 @@ export async function buy() {
   throw new Error("Le paiement n'est pas encore disponible sur cet appareil.");
 }
 
-// Restaurer : Play renvoie les achats du compte Google ; sur le web le droit suit le compte Screendex
+// Restaurer : Play renvoie les achats du compte Google ; sur le web le droit suit le compte Playwatch
 export async function restore() {
   if (channel() !== "play") return isPremium();
   const svc = await playService(); if (!svc) return isPremium();
