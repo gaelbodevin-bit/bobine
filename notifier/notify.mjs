@@ -1,4 +1,4 @@
-// Screendex — notifier (GitHub Actions, 2×/jour)
+// Playwatch — notifier (GitHub Actions, 2×/jour)
 // Lit les séries/films de chaque utilisateur abonné aux push, interroge TMDB,
 // et envoie une notification pour chaque nouvel épisode / sortie de film.
 import { initializeApp, cert } from "firebase-admin/app";
@@ -74,7 +74,7 @@ async function send(subs, payload) {
 // ── Par utilisateur ──
 async function runUser(uid, subs) {
   if (TEST) {
-    await send(subs, { title: "Screendex 🎬", body: "Notification de test envoyée par le serveur. Tout fonctionne !", url: APP_URL + "#upnext", tag: "test" });
+    await send(subs, { title: "Playwatch 🎬", body: "Notification de test envoyée par le serveur. Tout fonctionne !", url: APP_URL + "#upnext", tag: "test" });
     return;
   }
   const [showsSnap, moviesSnap] = await Promise.all([
@@ -162,7 +162,7 @@ async function runUser(uid, subs) {
   if (notes.length > 4) {
     const names = notes.map(n => n.name);
     await send(subs, {
-      title: `${notes.length} nouveautés dans Screendex`,
+      title: `${notes.length} nouveautés dans Playwatch`,
       body: names.slice(0, 5).join(", ") + (names.length > 5 ? ` et ${names.length - 5} autres` : ""),
       url: APP_URL + "#upnext", tag: "digest", badge
     });
