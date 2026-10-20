@@ -9,6 +9,7 @@ const state = {
   movies: new Map(),  // id -> movie
   games: new Map(),   // id RAWG -> jeu
   user: null,         // { uid, email } | { uid:'local' }
+  premium: false,     // droit Premium (écrit uniquement par le serveur : entitlements/{uid})
   ready: false
 };
 const listeners = new Set();
@@ -105,13 +106,20 @@ function subscribeUser(uid) {
   syncCol(uid, "shows", state.shows, () => { gotS = true; if (gotM) state.ready = true; emit(); });
   syncCol(uid, "movies", state.movies, () => { gotM = true; if (gotS) state.ready = true; emit(); });
   syncCol(uid, "games", state.games, () => { state.gamesReady = true; emit(); });
+  const { db, fs } = fb;
+  unsubs.push(fs.onSnapshot(fs.doc(db, "entitlements", uid), d => {
+    const e = d.data() || {};
+    state.premium = !!e.premium; state.entitlement = e;
+    try { localStorage.setItem("bobine:premium:" + uid, state.premium ? "1" : "0"); } catch { }
+    emit();
+  }, () => { }));
 }
 
 // ═════════════════ Init / Auth ═════════════════
 export async function init() {
   if (!hasFirebase) {
     localLoad();
-    state.user = { uid: "local", local: true };
+    state.user = { uid: "local", local: true }; state.premium = true;
     state.ready = true; emit();
     return state.user;
   }
@@ -122,12 +130,13 @@ export async function init() {
       state.shows.clear(); state.movies.clear(); state.games.clear(); state.gamesReady = false;
       if (u) {
         state.user = { uid: u.uid, email: u.email };
+        try { state.premium = localStorage.getItem("bobine:premium:" + u.uid) === "1"; } catch { state.premium = false; }
         state.ready = false;
         subscribeUser(u.uid);
         fb.fs.setDoc(fb.fs.doc(fb.db, "users", u.uid), { email: u.email, tz: Intl.DateTimeFormat().resolvedOptions().timeZone, seenAt: Date.now() }, { merge: true }).catch(() => { });
       } else {
         unsubs.forEach(x => x()); unsubs = [];
-        state.user = null; state.ready = true;
+        state.user = null; state.ready = true; state.premium = false;
       }
       emit();
       if (first) { first = false; res(state.user); }
@@ -179,6 +188,14 @@ export async function deleteAccount(password) {
   await au.deleteUser(u);
 }
 
+// Appel d'une Cloud Function « callable » (vérification des achats Premium)
+export const FN_REGION = "europe-west1";
+export async function callFn(name, payload) {
+  await loadFirebase();
+  const f = await import(FB + "firebase-functions.js");
+  const fns = f.getFunctions(fb.app, FN_REGION);
+  return (await f.httpsCallable(fns, name)(payload)).data;
+}
 export async function signOut() {
   if (!fb) return;
   return fb.au.signOut(fb.auth);
