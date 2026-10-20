@@ -1,4 +1,4 @@
-# Screendex Premium — mise en service
+# Playwatch Premium — mise en service
 
 Achat unique à vie. Débloque : notifications, statistiques avancées, thèmes & couleurs, import d'historique.
 Le suivi (séries, films, jeux) et l'export des données restent gratuits.
@@ -38,18 +38,18 @@ Console Firebase → Firestore → **Démarrer une collection** `entitlements`
 
 ## 4. Google Play
 1. Play Console → **Paramètres → Profil de paiement** : créer le compte marchand (Blue Cell Production, SIRET, IBAN).
-2. Screendex → **Monétiser → Produits → Produits intégrés** → Créer :
-   ID **`premium_lifetime`**, nom « Screendex Premium », prix **1,99 €** (Google convertit les autres pays) → Activer.
+2. Playwatch → **Monétiser → Produits → Produits intégrés** → Créer :
+   ID **`premium_lifetime`**, nom « Playwatch Premium », prix **1,99 €** (Google convertit les autres pays) → Activer.
 3. Google Cloud (projet bobine-4d524) → API → activer **Google Play Android Developer API**.
 4. Play Console → **Utilisateurs et autorisations → Inviter** l'adresse
    `640487665357-compute@developer.gserviceaccount.com`
-   avec « Afficher les données financières » + « Gérer les commandes et les abonnements », appli Screendex.
+   avec « Afficher les données financières » + « Gérer les commandes et les abonnements », appli Playwatch.
 5. PWABuilder (génération de l'AAB) : cocher **Play Billing** (Digital Goods API) dans les options Android.
 6. Tester avec un « testeur de licence » (Play Console → Paramètres → Test des licences) : achat gratuit.
 
 ## 5. Stripe (iPhone / web)
 1. Créer le compte Stripe (Blue Cell Production).
-2. Produit « Screendex Premium », **paiement unique 1,99 €** → **Payment Link**.
+2. Produit « Playwatch Premium », **paiement unique 1,99 €** → **Payment Link**.
    Après paiement : rediriger vers `https://gaelbodevin-bit.github.io/bobine/#profile`.
 3. Développeurs → Webhooks → endpoint = URL `stripeWebhook`,
    événements : `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `charge.refunded`.

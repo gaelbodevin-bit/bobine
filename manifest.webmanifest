@@ -1,6 +1,6 @@
 {
-  "name": "Screendex — séries, films & jeux",
-  "short_name": "Screendex",
+  "name": "Playwatch — séries, films & jeux",
+  "short_name": "Playwatch",
   "description": "Suis tes séries, films et jeux vidéo : épisodes vus, prochaines sorties, notifications.",
   "lang": "fr",
   "start_url": "./#series",
