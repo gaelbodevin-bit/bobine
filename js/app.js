@@ -84,13 +84,19 @@ const requested = new Set();
 const TVP = { append_to_response: "external_ids" };
 const tvErr = new Set();
 
+// Ne redessine que si la donnée a réellement changé (le cache affiché au démarrage est souvent déjà à jour)
+function setIfChanged(map, k, v) {
+  const o = map.get(k);
+  if (o && JSON.stringify(o) === JSON.stringify(v)) return false;
+  map.set(k, v); return true;
+}
 function needTv(id) {
   const k = "tv" + id;
   if (!requested.has(k)) {
     requested.add(k);
     (async () => {
       if (!details.has(id)) { const c = await tmdb.peek(`/tv/${id}`, TVP); if (c && !details.has(id)) { details.set(id, c); later(); } }
-      try { details.set(id, await tmdb.tv(id)); tvErr.delete(id); later(); } catch (e) { if (!details.has(id)) tvErr.add(id); onErr(e); later(); }
+      try { const v = await tmdb.tv(id); tvErr.delete(id); if (setIfChanged(details, id, v)) later(); } catch (e) { if (!details.has(id)) { tvErr.add(id); later(); } onErr(e); }
     })();
   }
   return details.get(id);
@@ -101,7 +107,7 @@ function needSeason(id, n) {
     requested.add("s" + k);
     (async () => {
       if (!seasons.has(k)) { const c = await tmdb.peek(`/tv/${id}/season/${n}`, {}); if (c && !seasons.has(k)) { seasons.set(k, c); later(); } }
-      try { seasons.set(k, await tmdb.season(id, n)); later(); } catch (e) { onErr(e); }
+      try { if (setIfChanged(seasons, k, await tmdb.season(id, n))) later(); } catch (e) { onErr(e); }
     })();
   }
   return seasons.get(k);
@@ -113,7 +119,7 @@ function needMovie(id) {
     (async () => {
       const P = { append_to_response: "release_dates,credits" };
       if (!movieD.has(id)) { const c = await tmdb.peek(`/movie/${id}`, P); if (c && !movieD.has(id)) { movieD.set(id, c); later(); } }
-      try { movieD.set(id, await tmdb.movie(id)); later(); } catch (e) { onErr(e); }
+      try { if (setIfChanged(movieD, id, await tmdb.movie(id))) later(); } catch (e) { onErr(e); }
     })();
   }
   return movieD.get(id);
@@ -127,6 +133,39 @@ function onErr(e) {
   if (e.message === "BAD_KEY") toast("Clé TMDB refusée — vérifie-la dans le profil");
   else if (e.message === "NO_KEY") renderKey();
   else if (!navigator.onLine) toast("Hors ligne — affichage du cache");
+}
+
+
+// ═════════════ Rendu sans clignotement ═════════════
+// Met à jour le DOM existant au lieu de tout recréer : les affiches déjà affichées ne sont pas rechargées.
+const keyOf = n => n.nodeType === 1 && n.dataset && n.dataset.id ? n.tagName + "|" + (n.dataset.a || "") + "|" + n.dataset.id + "|" + (n.dataset.s || "") + "|" + (n.dataset.e || "") : null;
+function syncNode(o, n) {
+  if (o.nodeType !== n.nodeType || o.nodeName !== n.nodeName) { o.replaceWith(n); return; }
+  if (o.nodeType !== 1) { if (o.nodeValue !== n.nodeValue) o.nodeValue = n.nodeValue; return; }
+  if (o.isEqualNode(n)) return;
+  for (const a of [...o.attributes]) if (!n.hasAttribute(a.name)) o.removeAttribute(a.name);
+  for (const a of [...n.attributes]) if (o.getAttribute(a.name) !== a.value) o.setAttribute(a.name, a.value);
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(o.tagName)) { if (document.activeElement !== o && "value" in n && o.value !== n.value) o.value = n.value; return; }
+  morphKids(o, n);
+}
+function morphKids(from, to) {
+  const keyed = new Map();
+  for (const o of from.childNodes) { const k = keyOf(o); if (k && !keyed.has(k)) keyed.set(k, o); }
+  const kids = [...to.childNodes];
+  kids.forEach((n, i) => {
+    const cur = from.childNodes[i] || null;
+    const k = keyOf(n);
+    let o = null;
+    if (k) { o = keyed.get(k) || null; if (o) { keyed.delete(k); if (o !== cur) from.insertBefore(o, cur); } }
+    else if (cur && !keyOf(cur) && cur.nodeName === n.nodeName) o = cur;
+    if (o) syncNode(o, n); else from.insertBefore(n, cur);
+  });
+  while (from.childNodes.length > kids.length) from.lastChild.remove();
+}
+function patch(el, html) {
+  if (!el.firstChild) { el.innerHTML = html; return; }
+  const t = document.createElement("template"); t.innerHTML = html;
+  morphKids(el, t.content);
 }
 
 // ═════════════ Rendu planifié ═════════════
@@ -206,6 +245,15 @@ function classify() {
 
 const nSeasons = t => t ? ((t.seasons || []).filter(x => x.season_number > 0 && x.episode_count).length || t.number_of_seasons || 0) : 0;
 
+// Activité d'une série : dernier visionnage, ou date de sortie du dernier épisode s'il n'est pas encore vu
+// → une série qui reçoit un nouvel épisode (nouvelle saison comprise) remonte en haut de la liste.
+function actKey(x) {
+  let k = x.s.lastWatchedAt || x.s.addedAt || 0;
+  const la = x.t?.last_episode_to_air;
+  if (la?.air_date && la.season_number > 0 && la.air_date <= isoToday() && x.s.status !== "stopped" && !isWatched(x.s, la.season_number, la.episode_number))
+    k = Math.max(k, dParse(la.air_date).getTime());
+  return k;
+}
 // Liste "En cours" : prochain épisode de chaque série, la dernière regardée en haut
 function upNextItems(c) {
   const nowISO = isoToday();
@@ -215,7 +263,7 @@ function upNextItems(c) {
     const la = x.t?.last_episode_to_air;
     const fresh = !!(la?.air_date && la.season_number > 0 && daysFrom(la.air_date) >= -7 && la.air_date <= nowISO && !isWatched(x.s, la.season_number, la.episode_number));
     return { ...x, ep, air, fresh, la };
-  }).sort((a, b) => ((b.s.lastWatchedAt || b.s.addedAt || 0) - (a.s.lastWatchedAt || a.s.addedAt || 0)));
+  }).sort((a, b) => actKey(b) - actKey(a));
 }
 const sec = (t, n) => `<div class="sec"><h2>${t}</h2>${n !== undefined ? `<span class="c">${n}</span>` : ""}</div>`;
 const skel = () => Array.from({ length: 4 }, () => `<div class="up"><div class="th sk"></div><div class="tx"><div class="sk" style="height:14px;width:60%;border-radius:6px"></div><div class="sk" style="height:12px;width:40%;border-radius:6px;margin-top:8px"></div></div></div>`).join("");
@@ -298,7 +346,7 @@ function vUpcoming(v) {
   if (recent.length) {
     h += sec("Sortis ces 7 derniers jours") + recent.map(x => calRow(x, true)).join("");
   }
-  v.innerHTML = h;
+  patch(v, h);
 }
 function calRow(x, past) {
   if (x.m) return `<button class="cal" data-a="mv" data-id="${x.m.id}"><div class="ps">${pimg(x.d?.poster_path || x.m.poster_path, x.m.title, "w154")}</div><div class="tx" style="flex:1;min-width:0"><div class="n" style="font-weight:650">${esc(x.d?.title || x.m.title)}</div><div class="d" style="color:var(--mu);font-size:13px"><span class="tag">Film</span>${esc(x.label)}</div></div></button>`;
@@ -316,7 +364,7 @@ const MOVIE_F = [["watchlist", "À voir"], ["watched", "Vus"]];
 const viewToggle = () => `<div style="display:flex;gap:8px"><button class="iconbtn" data-a="sview" aria-label="Changer l'affichage">${ui.seriesView === "grid" ? I.list : I.grid}</button>${profileBtn}</div>`;
 function vSeries(v) {
   const toggle = viewToggle();
-  if (!store.data.ready) { v.innerHTML = top("Séries", "", toggle) + skel(); return; }
+  if (!store.data.ready) { patch(v, top("Séries", "", toggle) + skel()); return; }
   const shows = store.data.shows;
   if (!shows.size) {
     v.innerHTML = top("Séries", "", toggle) + banners() + `
@@ -335,15 +383,15 @@ function vSeries(v) {
   let list;
   if (ui.seriesFilter === "watching") {
     const left = items.reduce((n, x) => n + (x.p?.remaining || 0), 0);
-    if (!items.length) { v.innerHTML = h + `<div class="empty" style="padding:24px">${I.check}<h3>À jour !</h3><p>Rien à rattraper pour l'instant.</p></div>`; return; }
-    if (ui.seriesView === "list") { v.innerHTML = h + items.map(upCard).join(""); return; }
+    if (!items.length) { patch(v, h + `<div class="empty" style="padding:24px">${I.check}<h3>À jour !</h3><p>Rien à rattraper pour l'instant.</p></div>`); return; }
+    if (ui.seriesView === "list") { patch(v, h + items.map(upCard).join("")); return; }
     list = items;
   } else {
     const all = [...c.watching, ...c.waiting, ...c.later, ...c.finished, ...c.stopped];
     list = (ui.seriesFilter === "all" ? all : c[ui.seriesFilter] || [])
-      .sort((a, b) => (b.s.lastWatchedAt || b.s.addedAt || 0) - (a.s.lastWatchedAt || a.s.addedAt || 0));
+      .sort((a, b) => actKey(b) - actKey(a));
   }
-  if (!list.length) { v.innerHTML = h + `<div class="empty">${I.tv}<h3>Rien ici</h3><p>Aucune série dans cette catégorie.</p></div>`; return; }
+  if (!list.length) { patch(v, h + `<div class="empty">${I.tv}<h3>Rien ici</h3><p>Aucune série dans cette catégorie.</p></div>`); return; }
 
   const subOf = x => {
     const p = x.t ? progress(x.s, x.t) : null;
@@ -368,7 +416,7 @@ function vSeries(v) {
       return `<button class="gp ${fresh ? "fresh" : ""}" data-a="tv" data-id="${x.s.id}"><div class="p">${pimg(x.t?.poster_path || x.s.poster_path, x.t?.name || x.s.name)}${fresh ? `<span class="newb">NOUVEL ÉP.</span>` : ""}${pct === 100 ? `<span class="badge">${I.check}</span>` : ""}${pct && pct < 100 ? `<div class="pbar"><i style="width:${pct}%"></i></div>` : ""}</div><div class="t">${esc(x.t?.name || x.s.name)}</div>${p?.next && p.watched > 0 ? `<div class="se">S${p.next.s} E${p.next.e}</div>` : ""}</button>`;
     }).join("")}</div>`;
   }
-  v.innerHTML = h;
+  patch(v, h);
 }
 
 // ═════════════ Vue : Suggestions ═════════════
@@ -475,7 +523,7 @@ function vMovies(v) {
       return cell(m, out ? (out === rf.digital ? "Dispo en VOD / streaming" : "Au cinéma depuis " + fmtShort(out)) : nd ? "Sortie " + fmtShort(nd) : year(m.release_date), !!out);
     }).join(""));
   }
-  v.innerHTML = h;
+  patch(v, h);
 }
 
 // ═════════════ Vue : Explorer ═════════════
@@ -728,21 +776,21 @@ async function setGame(id, status) {
 
 function vGames(v) {
   let h = top("Jeux", "", viewToggle());
-  if (!rawg.getKey()) { v.innerHTML = h + noKey(); return; }
+  if (!rawg.getKey()) { patch(v, h + noKey()); return; }
   const all = [...store.data.games.values()];
   if (!G_LABEL[ui.gameFilter]) ui.gameFilter = "playing";
   const fresh = all.filter(isNewRelease).length;
   h += `<div class="chips">${G_F.map(([k, l]) => `<button class="chip ${ui.gameFilter === k ? "on" : ""}" data-a="gfilter" data-v="${k}">${l}${k === "backlog" && fresh ? `<i class="dot">${fresh}</i>` : ""}</button>`).join("")}</div>`;
   const list = (ui.gameFilter === "all" ? all : all.filter(g => gst(g) === ui.gameFilter)).sort((a, b) => (b.lastAt || b.addedAt || 0) - (a.lastAt || a.addedAt || 0));
-  if (!all.length) { v.innerHTML = h + `<div class="empty">${I.pad}<h3>Ludothèque vide</h3><p>Ajoute tes jeux depuis Découvrir.</p><div class="btns"><button class="btn pri" data-a="tab" data-v="gdiscover">${I.search}Découvrir</button></div></div>`; return; }
-  if (!list.length) { v.innerHTML = h + `<div class="empty">${I.pad}<h3>Rien ici</h3><p>Aucun jeu dans cette catégorie.</p></div>`; return; }
+  if (!all.length) { patch(v, h + `<div class="empty">${I.pad}<h3>Ludothèque vide</h3><p>Ajoute tes jeux depuis Découvrir.</p><div class="btns"><button class="btn pri" data-a="tab" data-v="gdiscover">${I.search}Découvrir</button></div></div>`); return; }
+  if (!list.length) { patch(v, h + `<div class="empty">${I.pad}<h3>Rien ici</h3><p>Aucun jeu dans cette catégorie.</p></div>`); return; }
   if (ui.seriesView === "list") {
     h += list.map(g => `<button class="li" data-a="game" data-id="${g.id}"><div class="ps">${gcover(g.background_image, g.name)}</div><div class="tx"><div class="n">${esc(g.name)}</div>
       <div class="d">${esc([g.platform, year(g.released), ui.gameFilter === "all" ? G_LABEL[gst(g)] : ""].filter(Boolean).join(" · "))}${g.rating ? ` · <span style="color:var(--ac)">${"★".repeat(g.rating)}</span>` : ""}</div></div></button>`).join("");
   } else {
     h += `<div class="grid">${list.map(g => { const nw = isNewRelease(g); return `<button class="gp ${nw ? "fresh" : ""}" data-a="game" data-id="${g.id}"><div class="p">${gcover(g.background_image, g.name)}${nw ? `<span class="newb">SORTI !</span>` : ""}${g.rating ? `<span class="badge" style="width:auto;padding:0 6px;border-radius:8px;font-size:11px;font-weight:800">${g.rating}★</span>` : ""}</div><div class="t">${esc(g.name)}</div></button>`; }).join("")}</div>`;
   }
-  v.innerHTML = h;
+  patch(v, h);
 }
 
 const GOTY = [["Clair Obscur: Expedition 33", 2025], ["Astro Bot", 2024], ["Baldur's Gate 3", 2023], ["Elden Ring", 2022], ["It Takes Two", 2021], ["The Last of Us Part II", 2020],
@@ -790,7 +838,7 @@ function vGSuggest(v) {
 
 function vGUpcoming(v) {
   let h = top("À venir", "Sorties des jeux de ta liste", profileBtn);
-  if (!rawg.getKey()) { v.innerHTML = h + noKey(); return; }
+  if (!rawg.getKey()) { patch(v, h + noKey()); return; }
   const td = isoToday();
   const mine = [...store.data.games.values()].filter(g => ["wishlist", "backlog"].includes(g.status) && (g.tba || (g.released && g.released >= td)))
     .sort((a, b) => (a.tba ? "9" : a.released) > (b.tba ? "9" : b.released) ? 1 : -1);
@@ -806,7 +854,7 @@ function vGUpcoming(v) {
   if (!ui.gup) { ui.gup = "loading"; const y = new Date(); const end = new Date(y.getTime() + 365 * DAY).toISOString().slice(0, 10);
     rawg.list({ dates: `${td},${end}`, ordering: "-added" }, 12).then(r => { ui.gup = r; r.forEach(g => gameLite.set(g.id, g)); if (ui.tab === "gupcoming") renderView(); }).catch(e => { gameErr(e); ui.gup = []; }); }
   h += sec("Les plus attendus") + (Array.isArray(ui.gup) ? gRow(ui.gup.filter(g => g.background_image).map(g => ({ ...g, prize: g.tba ? "Date à venir" : g.released ? fmtShort(g.released) : "" }))) : skRow());
-  v.innerHTML = h;
+  patch(v, h);
 }
 
 let gSearchT, gSeq = 0;
@@ -1528,7 +1576,7 @@ function startApp() {
 async function boot() {
   if (!tmdb.getKey()) return renderKey();
   ui.mode = "loading";
-  $("#view").innerHTML = `<div class="full" style="align-items:center">${logo}</div>`;
+  if (!$("#view .boot")) $("#view").innerHTML = `<div class="boot">${logo}</div>`;
   try { await store.init(); }
   catch (e) { console.error(e); $("#view").innerHTML = `<div class="full">${logo}<p class="err">Impossible de charger Firebase : ${esc(e.message)}</p></div>`; return; }
   if (store.hasFirebase && !store.data.user) return renderAuth();
