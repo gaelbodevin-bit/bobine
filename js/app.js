@@ -288,7 +288,7 @@ function upCard(x) {
 const seTag = p => p?.next && p.watched > 0 ? `<em>S${p.next.s} E${p.next.e}</em>` : "";
 function poster(s, t, sub, done) {
   const p = t ? progress(s, t) : null;
-  const pct = p && p.aired ? Math.round(p.watched / p.aired * 100) : 0;
+  const pct = p && p.aired ? (p.next || p.watched < p.aired ? Math.min(99, Math.floor(p.watched / p.aired * 100)) : 100) : 0;
   return `<button class="pc" data-a="tv" data-id="${s.id}"><div class="p">${pimg(t?.poster_path || s.poster_path, t?.name || s.name)}${done ? `<span class="badge">${I.check}</span>` : ""}${!done && pct ? `<div class="pbar"><i style="width:${pct}%"></i></div>` : ""}</div><div class="t">${esc(t?.name || s.name)}</div>${sub ? `<div class="s">${esc(sub)}</div>` : ""}</button>`;
 }
 
@@ -411,7 +411,8 @@ function vSeries(v) {
   } else {
     h += `<div class="grid">${list.map(x => {
       const p = x.t ? progress(x.s, x.t) : null;
-      const pct = p?.aired ? Math.round(p.watched / p.aired * 100) : 0;
+      // 100 % (coche) uniquement si plus rien à voir — 499/500 ne doit pas s'afficher comme terminé
+      const pct = p?.aired ? (p.next || p.watched < p.aired ? Math.min(99, Math.floor(p.watched / p.aired * 100)) : 100) : 0;
       const fresh = x.fresh;
       return `<button class="gp ${fresh ? "fresh" : ""}" data-a="tv" data-id="${x.s.id}"><div class="p">${pimg(x.t?.poster_path || x.s.poster_path, x.t?.name || x.s.name)}${fresh ? `<span class="newb">NOUVEL ÉP.</span>` : ""}${pct === 100 ? `<span class="badge">${I.check}</span>` : ""}${pct && pct < 100 ? `<div class="pbar"><i style="width:${pct}%"></i></div>` : ""}</div><div class="t">${esc(x.t?.name || x.s.name)}</div>${p?.next && p.watched > 0 ? `<div class="se">S${p.next.s} E${p.next.e}</div>` : ""}</button>`;
     }).join("")}</div>`;
