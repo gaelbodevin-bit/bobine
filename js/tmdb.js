@@ -11,37 +11,50 @@ export function getKey() {
 export function setKey(k) { try { localStorage.setItem("bobine:tmdb", k.trim()); } catch {} }
 
 // ── Mini IndexedDB clé/valeur ───────────────────────────────
+// Ne bloque jamais : sur iPhone, IndexedDB peut ne pas répondre ou perdre sa connexion
+// (« Connection to Indexed Database server lost ») → délai max, puis on fait sans cache et on se reconnecte.
 let dbp;
 function db() {
   if (!dbp) dbp = new Promise((res, rej) => {
-    const r = indexedDB.open("bobine-cache", 1);
+    let r;
+    try { r = indexedDB.open("bobine-cache", 1); } catch (e) { return rej(e); }
     r.onupgradeneeded = () => r.result.createObjectStore("kv");
-    r.onsuccess = () => res(r.result);
+    r.onsuccess = () => { const d = r.result; d.onclose = () => { dbp = null; }; res(d); };
     r.onerror = () => rej(r.error);
-  }).catch(() => null);
+    r.onblocked = () => rej(new Error("IDB bloquée"));
+    setTimeout(() => rej(new Error("IDB muette")), 2500);
+  }).catch(() => { setTimeout(() => { dbp = null; }, 30000); return null; });
   return dbp;
 }
 export async function idbGet(k) {
   const d = await db(); if (!d) return null;
   return new Promise(res => {
-    const r = d.transaction("kv").objectStore("kv").get(k);
-    r.onsuccess = () => res(r.result || null); r.onerror = () => res(null);
+    const to = setTimeout(() => res(null), 1500);
+    const done = v => { clearTimeout(to); res(v); };
+    try {
+      const r = d.transaction("kv").objectStore("kv").get(k);
+      r.onsuccess = () => done(r.result || null); r.onerror = () => done(null);
+    } catch { dbp = null; done(null); }
   });
 }
 export async function idbSet(k, v) {
   const d = await db(); if (!d) return;
   return new Promise(res => {
-    const t = d.transaction("kv", "readwrite"); t.objectStore("kv").put(v, k);
-    t.oncomplete = res; t.onerror = res;
+    const to = setTimeout(res, 1500);
+    const done = () => { clearTimeout(to); res(); };
+    try {
+      const t = d.transaction("kv", "readwrite"); t.objectStore("kv").put(v, k);
+      t.oncomplete = done; t.onerror = done; t.onabort = done;
+    } catch { dbp = null; done(); }
   });
 }
 export async function clearCache() {
   const d = await db(); if (!d) return;
-  return new Promise(res => { const t = d.transaction("kv", "readwrite"); t.objectStore("kv").clear(); t.oncomplete = res; });
+  return new Promise(res => { try { const t = d.transaction("kv", "readwrite"); t.objectStore("kv").clear(); t.oncomplete = res; t.onerror = res; t.onabort = res; } catch { dbp = null; res(); } });
 }
 
 // ── File d'attente (TMDB ~40 req/s, on reste sage) ──────────
-const MAX = 6; let active = 0; const queue = [];
+const MAX = 10; let active = 0; const queue = [];
 function schedule(fn) {
   return new Promise((res, rej) => { queue.push({ fn, res, rej }); pump(); });
 }

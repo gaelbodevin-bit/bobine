@@ -205,6 +205,7 @@ function showSplash() {
   return sp;
 }
 function hideSplash() {
+  window.__pwUp = true;
   document.querySelectorAll("body > .boot").forEach(sp => { sp.classList.add("out"); setTimeout(() => sp.remove(), 260); });
 }
 const epOf = (id, s, e) => needSeason(id, s)?.episodes?.find(x => x.episode_number === e);
@@ -1610,7 +1611,7 @@ function toast(msg, action, fn, ms) {
 }
 
 // ═════════════ Écrans clé / auth ═════════════
-function bare(html) { document.querySelectorAll("body > .boot").forEach(x => x.remove()); $("#tabs").classList.add("hidden"); $("#view").innerHTML = `<div class="full">${html}</div>`; $("#view").style.padding = "0"; }
+function bare(html) { window.__pwUp = true; document.querySelectorAll("body > .boot").forEach(x => x.remove()); $("#tabs").classList.add("hidden"); $("#view").innerHTML = `<div class="full">${html}</div>`; $("#view").style.padding = "0"; }
 const logo = `<div class="logo"><img src="icons/icon-192.png" alt=""><b>Playwatch</b></div>`;
 
 function renderKey() {
@@ -1671,6 +1672,20 @@ const authErr = e => ({
 }[e.code] || e.message);
 
 // ═════════════ Démarrage ═════════════
+// En cas de pépin, on affiche l'erreur (capture d'écran = diagnostic) et un bouton pour relancer proprement.
+let bootErr = null;
+addEventListener("error", e => { if (ui.mode !== "app") bootErr = e.error || e.message; });
+addEventListener("unhandledrejection", e => { if (ui.mode !== "app") bootErr = e.reason; });
+const errText = e => esc(String(e?.message || e || "erreur inconnue")).slice(0, 300);
+function relaunch() {
+  Promise.resolve(window.caches?.keys?.()).then(ks => Promise.all((ks || []).filter(k => k !== "bobine-img").map(k => caches.delete(k))))
+    .catch(() => { }).then(() => location.reload());
+}
+function fatal(e) {
+  ui.mode = "error";
+  bare(`${logo}<p>Playwatch n'a pas pu s'afficher.</p><button class="btn pri" id="relaunch">Relancer</button><p class="err" style="font-size:12px;opacity:.75;margin-top:18px;word-break:break-word">${errText(e)}${bootErr && errText(bootErr) !== errText(e) ? "<br>" + errText(bootErr) : ""}</p>`);
+  $("#relaunch").onclick = relaunch;
+}
 let startRun = 0;
 async function startApp() {
   const run = ++startRun;
@@ -1679,23 +1694,25 @@ async function startApp() {
   const h = location.hash.slice(1);
   if (TABS.some(t => t[0] === h && ui.domains[domainOf(h)]) || h === "profile" || h === "settings") ui.tab = h; else ui.tab = ui.lastTab[ui.domain];
   if (ui.tab !== "profile" && ui.tab !== "settings") ui.domain = domainOf(ui.tab);
-  const t0 = Date.now();
+  const t0 = Date.now(), hard = t0 + 8000;   // quoi qu'il arrive (réseau, cache bloqué…), la liste s'affiche au plus tard 8 s après
   let pushDone = false;
   const pushP = push.status().then(s => { ui.pushStatus = s; pushDone = true; }).catch(() => { pushDone = true; });
-  await whenStoreReady(t0 + 5000);
-  if (run !== startRun || ui.mode !== "loading") return;
-  const deadline = Math.min(Date.now() + 2500, t0 + 4500);
-  await Promise.all([
-    navigator.onLine ? store.whenSynced(Math.max(0, deadline - Date.now())) : null,
-    preloadShows(deadline),
-    preloadMovies(),
-    until(pushP, deadline)
-  ]);
-  await preloadShows(deadline);   // séries ajoutées depuis un autre appareil pendant l'attente
+  try {
+    await whenStoreReady(t0 + 5000);
+    if (run !== startRun || ui.mode !== "loading") return;
+    const deadline = Math.min(Date.now() + 2500, t0 + 4500);
+    await until(Promise.all([
+      navigator.onLine ? store.whenSynced(Math.max(0, deadline - Date.now())) : null,
+      preloadShows(deadline),
+      preloadMovies(),
+      until(pushP, deadline)
+    ]), hard);
+    await until(preloadShows(deadline), hard);   // séries ajoutées depuis un autre appareil pendant l'attente
+  } catch (e) { console.error("préchargement", e); bootErr = e; }
   if (run !== startRun || ui.mode !== "loading") return;
   ui.mode = "app";
   $("#tabs").classList.remove("hidden"); $("#view").style.padding = "";
-  renderView(true);
+  try { renderView(true); } catch (e) { console.error(e); return fatal(e); }
   await imgsReady($("#view"), 800);
   if (run !== startRun) return;
   hideSplash();
@@ -1708,7 +1725,7 @@ async function boot() {
   ui.mode = "loading";
   if (!$("#view .boot")) $("#view").innerHTML = `<div class="boot">${logo}</div>`;
   try { await store.init(); }
-  catch (e) { console.error(e); $("#view").innerHTML = `<div class="full">${logo}<p class="err">Impossible de charger Firebase : ${esc(e.message)}</p></div>`; return; }
+  catch (e) { console.error(e); return fatal(e); }
   if (store.hasFirebase && !store.data.user) return renderAuth();
   startApp();
 }
