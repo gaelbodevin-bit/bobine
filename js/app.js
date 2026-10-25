@@ -1165,7 +1165,7 @@ function tvSheet(id, sh) {
   <div class="btns">${s
       ? `<button class="btn" data-a="showMenu" data-id="${id}">${(() => { const k = (s.statusManual || s.status === "stopped") ? s.status : (p.watched === 0 ? "later" : "watching"); return (k === "later" ? I.mark : k === "stopped" ? I.stop : I.play) + (SHOW_ST[k] || "En cours"); })()} ▾</button>`
       : `<button class="btn pri" data-a="followLater" data-id="${id}">${I.plus}Ajouter à « À voir »</button>`}
-  ${p.next ? `<button class="btn ${s ? "pri" : ""}" data-a="watchNext" data-id="${id}" data-s="${p.next.s}" data-e="${p.next.e}">${I.check}${SE(p.next.s, p.next.e)}</button>` : ""}</div>
+  ${p.next ? `<button class="btn nextep" data-a="watchNext" data-id="${id}" data-s="${p.next.s}" data-e="${p.next.e}" aria-label="Marquer ${SE(p.next.s, p.next.e)} comme vu"><span class="tick">${I.check}</span><span class="lbl"><small>À regarder</small>${SE(p.next.s, p.next.e)}</span></button>` : ""}</div>
   ${p.aired ? `<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--mu)"><span>${p.watched} / ${plural(p.aired, "épisode")} vus · ${plural(nSeasons(t), "saison")}</span><span>${Math.round(p.watched / p.aired * 100)} %</span></div><div class="bar" style="height:6px"><i style="width:${p.watched / p.aired * 100}%"></i></div>` : ""}
   ${nx ? `<div class="info">${I.clock}<div>Prochain épisode : <b>${SE(nx.season_number, nx.episode_number)}</b>${nx.air_date ? ` — ${esc(fmtLong(nx.air_date))}` : ""}</div></div>` : ""}
   ${t.genres.length ? `<div class="gen">${t.genres.map(g => `<span>${esc(g)}</span>`).join("")}</div>` : ""}
@@ -1368,8 +1368,8 @@ const A = {
 
   async watchNext(el) {
     const id = +el.dataset.id, s = +el.dataset.s, e = +el.dataset.e;
-    const card = el.closest(".up");
-    if (card) { card.classList.add("done"); await new Promise(r => setTimeout(r, 300)); }
+    const card = el.closest(".up") || (el.classList.contains("nextep") ? el : null);
+    if (card) { card.classList.add("done"); await new Promise(r => setTimeout(r, 300)); }   // la case se coche, puis on passe au suivant
     const list = await withPrevious(id, s, e);
     const before = store.data.shows.get(id);
     const added = list.filter(x => !isWatched(before, x.s, x.e)).length;
