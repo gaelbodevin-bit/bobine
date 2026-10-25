@@ -16,6 +16,8 @@ const I = {
   edit: svg('<path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>'),
   dice: svg('<rect x="4" y="4" width="16" height="16" rx="3.5"/><circle cx="9" cy="9" r="1.2" fill="currentColor"/><circle cx="15" cy="15" r="1.2" fill="currentColor"/><circle cx="15" cy="9" r="1.2" fill="currentColor"/><circle cx="9" cy="15" r="1.2" fill="currentColor"/>'),
   lock: svg('<rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/>'),
+  gear: svg('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'),
+  back: svg('<path d="M15 5l-7 7 7 7"/>'),
   crown: svg('<path d="M4 8l4 4 4-6 4 6 4-4-1.5 10h-13z"/>'),
   play: svg('<circle cx="12" cy="12" r="9"/><path d="M10 8.5v7l6-3.5z" fill="currentColor"/>'),
   cal: svg('<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/>'),
@@ -130,7 +132,7 @@ let errShown = 0;
 function onErr(e) {
   console.warn(e);
   if (Date.now() - errShown < 8000) return; errShown = Date.now();
-  if (e.message === "BAD_KEY") toast("Clé TMDB refusée — vérifie-la dans le profil");
+  if (e.message === "BAD_KEY") toast("Clé TMDB refusée — vérifie-la dans Profil → Paramètres");
   else if (e.message === "NO_KEY") renderKey();
   else if (!navigator.onLine) toast("Hors ligne — affichage du cache");
 }
@@ -199,12 +201,12 @@ fixDomain();
 const curTabs = () => ui.domain === "games" ? G_TABS : AV_TABS;
 function renderTabs(badge = 0) {
   $("#tabs").innerHTML = curTabs().map(([k, l, ic]) =>
-    `<button data-a="tab" data-v="${k}" class="${ui.tab === k ? "on" : ""}">${ic}${l}</button>`).join("");
+    `<button data-a="tab" data-v="${k}" class="${ui.tab === k ? "on" : ""}">${ic}${l}${k === "games" && unseenGames() ? `<i class="dot">${unseenGames()}</i>` : ""}</button>`).join("");
 }
 function go(tab) {
   tab = TAB_ALIAS[tab] || tab;
   if (tab === ui.tab) { window.scrollTo({ top: 0, behavior: "smooth" }); return; }
-  ui.tab = tab; if (tab !== "profile") { ui.domain = domainOf(tab); ui.lastTab[ui.domain] = tab; }
+  ui.tab = tab; if (tab !== "profile" && tab !== "settings") { ui.domain = domainOf(tab); ui.lastTab[ui.domain] = tab; }
   history.replaceState(history.state, "", "#" + tab);
   renderView(true); window.scrollTo(0, 0);
 }
@@ -215,12 +217,12 @@ function renderView(force) {
   const v = $("#view");
   if (TAB_ALIAS[ui.tab]) ui.tab = TAB_ALIAS[ui.tab];
   ({ series: vSeries, upcoming: vUpcoming, movies: vMovies, discover: vExplore, profile: vProfile,
-     games: vGames, gupcoming: vGUpcoming, gdiscover: vGExplore }[ui.tab] || vSeries)(v, force);
+     games: vGames, gupcoming: vGUpcoming, gdiscover: vGExplore, settings: vSettings }[ui.tab] || vSeries)(v, force);
   renderTabs(ui.badge);
 }
 
 const domainSwitch = () => ui.domains.av && ui.domains.games
-  ? `<div class="dswitch"><button data-a="domain" data-v="av" class="${ui.domain === "av" ? "on" : ""}">${I.film}Films & séries</button><button data-a="domain" data-v="games" class="${ui.domain === "games" ? "on" : ""}">${I.pad}Jeux vidéo</button></div>` : "";
+  ? `<div class="dswitch"><button data-a="domain" data-v="av" class="${ui.domain === "av" ? "on" : ""}">${I.film}Films & séries</button><button data-a="domain" data-v="games" class="${ui.domain === "games" ? "on" : ""}">${I.pad}Jeux vidéo${ui.domain !== "games" && unseenGames() ? `<i class="dot">${unseenGames()}</i>` : ""}</button></div>` : "";
 const top = (title, sub = "", right = "") => domainSwitch() +
   `<div class="top"><div><h1>${title}</h1>${sub ? `<div class="sub">${sub}</div>` : ""}</div>${right}</div>`;
 const profileBtn = `<button class="iconbtn" data-a="tab" data-v="profile" aria-label="Profil">${I.user}</button>`;
@@ -361,15 +363,15 @@ function calRow(x, past) {
 // ═════════════ Vue : Séries ═════════════
 const SERIES_F = [["watching", "En cours"], ["later", "À voir"], ["waiting", "À jour"], ["finished", "Terminées"], ["stopped", "Arrêtées"], ["all", "Toutes"]];
 const MOVIE_F = [["watchlist", "À voir"], ["watched", "Vus"]];
-const viewToggle = () => `<div style="display:flex;gap:8px"><button class="iconbtn" data-a="sview" aria-label="Changer l'affichage">${ui.seriesView === "grid" ? I.list : I.grid}</button>${profileBtn}</div>`;
+const viewToggle = (dice = "") => `<div style="display:flex;gap:8px">${dice}<button class="iconbtn" data-a="sview" aria-label="Changer l'affichage">${ui.seriesView === "grid" ? I.list : I.grid}</button>${profileBtn}</div>`;
 function vSeries(v) {
-  const toggle = viewToggle();
+  const toggle = viewToggle(store.data.shows.size > 1 ? `<button class="iconbtn roul" data-a="sroulette" aria-label="Roulette : une série au hasard">${I.dice}</button>` : "");
   if (!store.data.ready) { patch(v, top("Séries", "", toggle) + skel()); return; }
   const shows = store.data.shows;
   if (!shows.size) {
     v.innerHTML = top("Séries", "", toggle) + banners() + `
       <div class="empty">${I.tv}<h3>Aucune série suivie</h3><p>Ajoute tes séries depuis Découvrir, ou importe ton historique.</p>
-      <div class="btns"><button class="btn pri" data-a="tab" data-v="discover">${I.search}Découvrir</button><button class="btn" data-a="tab" data-v="profile">${I.up}Importer</button></div></div>`;
+      <div class="btns"><button class="btn pri" data-a="tab" data-v="discover">${I.search}Découvrir</button><button class="btn" data-a="tab" data-v="settings">${I.up}Importer</button></div></div>`;
     ui.badge = 0; return;
   }
   const c = classify();
@@ -580,12 +582,21 @@ function discoverRows(d) {
 // ═════════════ Vue : Profil ═════════════
 function vProfile(v, force) {
   if (ui.profPremium !== premium.isPremium()) { ui.profPremium = premium.isPremium(); force = true; }
-  if (!force && $("#pstats")) { $("#pstats").innerHTML = profStats(); $("#pushcard").innerHTML = pushCard(); const a = $("#advstats"); if (a && premium.isPremium()) a.innerHTML = advStats(); return; }
+  if (!force && $("#pstats")) { $("#pstats").innerHTML = profStats(); const a = $("#advstats"); if (a && premium.isPremium()) a.innerHTML = advStats(); return; }
   const u = store.data.user;
-  v.innerHTML = top("Profil", u?.email ? esc(u.email) : "Mode local (sans compte)", `<button class="iconbtn" data-a="tab" data-v="${ui.lastTab[ui.domain]}" aria-label="Fermer">${I.x}</button>`) + `
+  v.innerHTML = top("Profil", u?.email ? esc(u.email) : "Mode local (sans compte)", `<div style="display:flex;gap:8px"><button class="iconbtn" data-a="tab" data-v="settings" aria-label="Paramètres">${I.gear}</button><button class="iconbtn" data-a="tab" data-v="${ui.lastTab[ui.domain]}" aria-label="Fermer">${I.x}</button></div>`) + `
   ${premiumCard()}
   <div class="stats" id="pstats">${profStats()}</div>
   ${premium.isPremium() ? `<div class="card" id="advstats">${advStats()}</div>` : lockedCard("Statistiques avancées", "Récap de l'année, temps passé, genres et chaînes préférés, décennies, notes moyennes, top séries, plateformes de jeux.")}
+  <button class="card setlink" data-a="tab" data-v="settings">${I.gear}<div><b>Paramètres</b><span>Notifications, thème, contenus, import / sauvegarde, clés TMDB et RAWG, compte</span></div>${I.chev}</button>
+`;
+}
+
+// ═════════════ Vue : Paramètres ═════════════
+function vSettings(v, force) {
+  if (!force && $("#pushcard")) { $("#pushcard").innerHTML = pushCard(); return; }
+  const u = store.data.user;
+  v.innerHTML = top("Paramètres", "", `<button class="iconbtn" data-a="tab" data-v="profile" aria-label="Retour au profil">${I.back}</button>`) + `
   <div class="card" id="pushcard">${pushCard()}</div>
   <div class="card"><h3>Contenus affichés</h3><p>Décoche ce que tu ne suis pas : le sélecteur du haut disparaît s'il ne reste qu'un univers.</p>
     <label class="colrow"><span>${I.film.replace("<svg", '<svg style="width:18px;height:18px;vertical-align:-4px;margin-right:8px"')}Films & séries</span><input type="checkbox" class="tgl" data-dom="av" ${ui.domains.av ? "checked" : ""}></label>
@@ -753,7 +764,7 @@ let gErrShown = 0;
 function gameErr(e) {
   console.warn(e);
   if (Date.now() - gErrShown < 8000) return; gErrShown = Date.now();
-  if (e.message === "BAD_RAWG_KEY") toast("Clé RAWG refusée — vérifie-la dans le profil");
+  if (e.message === "BAD_RAWG_KEY") toast("Clé RAWG refusée — vérifie-la dans Profil → Paramètres");
   else if (!navigator.onLine) toast("Hors ligne — affichage du cache");
 }
 const gcover = (url, alt) => url ? `<img src="${gimg(url, 640)}" alt="" loading="lazy" decoding="async">` : `<div class="noimg">${esc(alt)}</div>`;
@@ -761,6 +772,9 @@ const noKey = () => `<div class="card"><h3>${I.pad.replace("<svg", '<svg style="
   <p>Les jaquettes, fiches et dates de sortie viennent de RAWG. Crée un compte gratuit sur <a href="https://rawg.io/apidocs" target="_blank" rel="noopener">rawg.io/apidocs</a>, clique « Get API Key » et colle la clé ici.</p>
   <input class="field" id="rawgk" placeholder="Clé API RAWG" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn pri" data-a="saveRawg" style="width:100%">Enregistrer</button></div>`;
 const isNewRelease = g => gst(g) === "backlog" && g.released && g.released <= isoToday() && daysFrom(g.released) >= -7;
+// Sortie pas encore consultée (30 jours max) → compteur sur « À jouer », l'onglet Jeux et le sélecteur Jeux vidéo
+const isUnseenRelease = g => gst(g) === "backlog" && g.released && g.released <= isoToday() && daysFrom(g.released) >= -30 && g.seenRelease !== g.released;
+const unseenGames = () => ui.domains.games ? [...store.data.games.values()].filter(isUnseenRelease).length : 0;
 
 async function setGame(id, status) {
   const prev = store.data.games.get(id);
@@ -780,7 +794,7 @@ function vGames(v) {
   if (!rawg.getKey()) { patch(v, h + noKey()); return; }
   const all = [...store.data.games.values()];
   if (!G_LABEL[ui.gameFilter]) ui.gameFilter = "playing";
-  const fresh = all.filter(isNewRelease).length;
+  const fresh = all.filter(isUnseenRelease).length;
   h += `<div class="chips">${G_F.map(([k, l]) => `<button class="chip ${ui.gameFilter === k ? "on" : ""}" data-a="gfilter" data-v="${k}">${l}${k === "backlog" && fresh ? `<i class="dot">${fresh}</i>` : ""}</button>`).join("")}</div>`;
   const list = (ui.gameFilter === "all" ? all : all.filter(g => gst(g) === ui.gameFilter)).sort((a, b) => (b.lastAt || b.addedAt || 0) - (a.lastAt || a.addedAt || 0));
   if (!all.length) { patch(v, h + `<div class="empty">${I.pad}<h3>Ludothèque vide</h3><p>Ajoute tes jeux depuis Découvrir.</p><div class="btns"><button class="btn pri" data-a="tab" data-v="gdiscover">${I.search}Découvrir</button></div></div>`); return; }
@@ -905,6 +919,8 @@ function renderGResults() {
 }
 
 function openGame(id) {
+  const g0 = store.data.games.get(id);
+  if (g0 && isUnseenRelease(g0)) store.saveGame({ ...g0, seenRelease: g0.released }).catch(() => { });
   const sh = openSheet(sh => gameSheet(id, sh));
   rawg.screenshots(id).then(x => { sh.state.shots = x; sh.refresh(); }).catch(() => { sh.state.shots = []; });
 }
@@ -1210,7 +1226,7 @@ const A = {
   mseg: el => { ui.movieSeg = el.dataset.v; renderView(); },
   retryTv: el => { const id = +el.dataset.id; tvErr.delete(id); requested.delete("tv" + id); sheets.at(-1)?.refresh(); },
   domain: el => {
-    const d = el.dataset.v; if (d === ui.domain && ui.tab !== "profile") return;
+    const d = el.dataset.v; if (d === ui.domain && ui.tab !== "profile" && ui.tab !== "settings") return;
     ui.domain = d; try { localStorage.setItem("bobine:domain", d); } catch { }
     closeAllSheets(); go(ui.lastTab[d]);
   },
@@ -1240,6 +1256,14 @@ const A = {
     if (!wl.length) return toast("Aucun film déjà sorti dans ta liste");
     const pick = wl[Math.floor(Math.random() * wl.length)];
     const b = $(".roul"); b?.classList.add("spin"); setTimeout(() => { b?.classList.remove("spin"); openMovie(pick.id); toast(`🎲 Ce soir : ${pick.title}`); }, 650);
+  },
+  // Roulette séries : pioche dans le filtre affiché (En cours / À voir), sinon dans « À voir »
+  sroulette: () => {
+    const c = classify();
+    const pool = (ui.seriesFilter === "watching" || ui.seriesFilter === "later") && c[ui.seriesFilter].length ? c[ui.seriesFilter] : (c.later.length ? c.later : c.watching);
+    if (!pool.length) return toast("Aucune série à piocher");
+    const pick = pool[Math.floor(Math.random() * pool.length)];
+    const b = $(".roul"); b?.classList.add("spin"); setTimeout(() => { b?.classList.remove("spin"); openTv(pick.s.id); toast(`🎲 Ce soir : ${pick.t?.name || pick.s.name}`); }, 650);
   },
   sview: () => { ui.seriesView = ui.seriesView === "grid" ? "list" : "grid"; try { localStorage.setItem("bobine:sview", ui.seriesView); } catch { } renderView(); },
   sugseg: el => { ui.sugSeg = el.dataset.v; loadSug(ui.sugSeg); renderResults(); },
@@ -1567,8 +1591,8 @@ function startApp() {
   ui.mode = "app";
   $("#tabs").classList.remove("hidden"); $("#view").style.padding = "";
   const h = location.hash.slice(1);
-  if (TABS.some(t => t[0] === h && ui.domains[domainOf(h)]) || h === "profile") ui.tab = h; else ui.tab = ui.lastTab[ui.domain];
-  if (ui.tab !== "profile") ui.domain = domainOf(ui.tab);
+  if (TABS.some(t => t[0] === h && ui.domains[domainOf(h)]) || h === "profile" || h === "settings") ui.tab = h; else ui.tab = ui.lastTab[ui.domain];
+  if (ui.tab !== "profile" && ui.tab !== "settings") ui.domain = domainOf(ui.tab);
   renderView(true);
   push.status().then(s => { ui.pushStatus = s; renderView(); }).catch(() => { });
   push.refresh();
