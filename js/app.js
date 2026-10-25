@@ -92,13 +92,28 @@ function setIfChanged(map, k, v) {
   if (o && JSON.stringify(o) === JSON.stringify(v)) return false;
   map.set(k, v); return true;
 }
+// Réponses réseau TMDB regroupées : au lieu de redessiner à chaque réponse (la liste « saute » plusieurs fois),
+// on attend que toutes les requêtes en cours soient revenues (2 s max) et on applique tout en une seule fois.
+// Une fois la liste à l'écran, ce qui arrive tout seul (nouveaux épisodes, sorties, synchro d'un autre appareil…)
+// ne la fait plus bouger sous les yeux : c'est gardé de côté (held) et appliqué au prochain moment invisible —
+// changement d'onglet ou de filtre, fiche ouverte ou refermée, action de l'utilisateur, app passée en arrière-plan.
+// Exceptions : juste après un geste de l'utilisateur (il attend une réaction) ou s'il reste un emplacement « en chargement ».
+let netPending = 0, netDirty = false, netTimer = 0, held = false, tapAt = -1e9;
+const CALM_TABS = new Set(["series", "movies", "upcoming", "games", "gupcoming"]);
+const calm = () => ui.mode === "app" && !sheets.length && document.visibilityState === "visible" && CALM_TABS.has(ui.tab)
+  && performance.now() - tapAt > 2000 && !document.querySelector("#view .sk");
+function quietRender() { if (calm()) held = true; else later(); }
+function flushNet() { clearTimeout(netTimer); netTimer = 0; if (netDirty) { netDirty = false; quietRender(); } }
+function laterNet() { netDirty = true; if (!netPending) return flushNet(); if (!netTimer) netTimer = setTimeout(flushNet, 2000); }
+async function net(p) { netPending++; try { return await p; } finally { if (!--netPending) flushNet(); } }
+
 function needTv(id) {
   const k = "tv" + id;
   if (!requested.has(k)) {
     requested.add(k);
     (async () => {
-      if (!details.has(id)) { const c = await tmdb.peek(`/tv/${id}`, TVP); if (c && !details.has(id)) { details.set(id, c); later(); } }
-      try { const v = await tmdb.tv(id); tvErr.delete(id); if (setIfChanged(details, id, v)) later(); } catch (e) { if (!details.has(id)) { tvErr.add(id); later(); } onErr(e); }
+      if (!details.has(id)) { const c = await tmdb.peek(`/tv/${id}`, TVP); if (c && !details.has(id)) { details.set(id, c); quietRender(); } }
+      try { const v = await net(tmdb.tv(id)); tvErr.delete(id); const had = details.has(id); if (setIfChanged(details, id, v)) had ? laterNet() : quietRender(); } catch (e) { if (!details.has(id)) { tvErr.add(id); later(); } onErr(e); }
     })();
   }
   return details.get(id);
@@ -108,23 +123,89 @@ function needSeason(id, n) {
   if (!requested.has("s" + k)) {
     requested.add("s" + k);
     (async () => {
-      if (!seasons.has(k)) { const c = await tmdb.peek(`/tv/${id}/season/${n}`, {}); if (c && !seasons.has(k)) { seasons.set(k, c); later(); } }
-      try { if (setIfChanged(seasons, k, await tmdb.season(id, n))) later(); } catch (e) { onErr(e); }
+      if (!seasons.has(k)) { const c = await tmdb.peek(`/tv/${id}/season/${n}`, {}); if (c && !seasons.has(k)) { seasons.set(k, c); quietRender(); } }
+      try { const v = await net(tmdb.season(id, n)); const had = seasons.has(k); if (setIfChanged(seasons, k, v)) had ? laterNet() : quietRender(); } catch (e) { onErr(e); }
     })();
   }
   return seasons.get(k);
 }
+const MVP = { append_to_response: "release_dates,credits" };
 function needMovie(id) {
   const k = "mv" + id;
   if (!requested.has(k)) {
     requested.add(k);
     (async () => {
-      const P = { append_to_response: "release_dates,credits" };
-      if (!movieD.has(id)) { const c = await tmdb.peek(`/movie/${id}`, P); if (c && !movieD.has(id)) { movieD.set(id, c); later(); } }
-      try { if (setIfChanged(movieD, id, await tmdb.movie(id))) later(); } catch (e) { onErr(e); }
+      if (!movieD.has(id)) { const c = await tmdb.peek(`/movie/${id}`, MVP); if (c && !movieD.has(id)) { movieD.set(id, c); quietRender(); } }
+      try { const v = await net(tmdb.movie(id)); const had = movieD.has(id); if (setIfChanged(movieD, id, v)) had ? laterNet() : quietRender(); } catch (e) { onErr(e); }
     })();
   }
   return movieD.get(id);
+}
+
+// ═════════════ Préchargement au démarrage ═════════════
+// Le logo reste affiché pendant qu'on prépare tout (cache local + vérification des nouveaux épisodes),
+// puis la liste apparaît directement dans son état final : plus de « Chargement… » ni de séries qui bougent.
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const until = (p, deadline) => Promise.race([p, sleep(Math.max(0, deadline - Date.now()))]);
+const preloaded = new Set();
+async function preloadShows(deadline) {
+  const todo = [...store.data.shows.values()].filter(s => !preloaded.has(s.id));
+  todo.forEach(s => preloaded.add(s.id));
+  // 1) Cache local (instantané)
+  await Promise.all(todo.map(async s => {
+    if (details.has(s.id)) return;
+    const c = await tmdb.peek(`/tv/${s.id}`, TVP); if (c && !details.has(s.id)) details.set(s.id, c);
+  }));
+  // 2) Réseau pour les séries encore diffusées : c'est là qu'arrivent les nouveaux épisodes
+  //    (une réponse arrivée après l'affichage passe par le rendu groupé)
+  const online = navigator.onLine;
+  if (online) await until(Promise.all(todo
+    .filter(s => s.status !== "stopped" && !["Ended", "Canceled"].includes(details.get(s.id)?.status))
+    .map(s => tmdb.tv(s.id).then(v => { tvErr.delete(s.id); const had = details.has(s.id); if (setIfChanged(details, s.id, v) && ui.mode === "app") had ? laterNet() : quietRender(); }, () => { }))), deadline);
+  // 3) Saison du prochain épisode à voir (vignette + titre de l'épisode)
+  const ss = [];
+  for (const s of todo) {
+    const t = details.get(s.id); if (!t || s.status === "stopped") continue;
+    const p = progress(s, t); if (p.next && p.watched > 0) ss.push([s.id, p.next.s]);
+  }
+  await Promise.all(ss.map(async ([id, n]) => {
+    const k = id + ":" + n; if (seasons.has(k)) return;
+    const c = await tmdb.peek(`/tv/${id}/season/${n}`, {}); if (c && !seasons.has(k)) seasons.set(k, c);
+  }));
+  if (online) await until(Promise.all(ss.map(([id, n]) => tmdb.season(id, n)
+    .then(v => { const had = seasons.has(id + ":" + n); if (setIfChanged(seasons, id + ":" + n, v) && ui.mode === "app") had ? laterNet() : quietRender(); }, () => { }))), deadline);
+}
+// Films « à voir » : seul le cache local (dates de sortie), sans bloquer
+function preloadMovies() {
+  return Promise.all([...store.data.movies.values()].filter(m => m.status === "watchlist").map(async m => {
+    if (movieD.has(m.id)) return;
+    const c = await tmdb.peek(`/movie/${m.id}`, MVP); if (c && !movieD.has(m.id)) movieD.set(m.id, c);
+  }));
+}
+function whenStoreReady(deadline) {
+  const ok = () => store.data.ready && (store.data.gamesReady || !ui.domains.games);
+  return new Promise(res => {
+    if (ok()) return res();
+    const un = store.onChange(() => { if (ok()) { un(); res(); } });
+    setTimeout(() => { un(); res(); }, Math.max(0, deadline - Date.now()));
+  });
+}
+// Attend les affiches visibles à l'écran (le logo les cache pendant ce temps)
+function imgsReady(root, ms) {
+  const vh = innerHeight;
+  const imgs = [...root.querySelectorAll("img")].filter(i => !i.complete && i.getBoundingClientRect().top < vh);
+  if (!imgs.length) return Promise.resolve();
+  return Promise.race([Promise.all(imgs.map(i => new Promise(r => { i.addEventListener("load", r, { once: true }); i.addEventListener("error", r, { once: true }); }))), sleep(ms)]);
+}
+function showSplash() {
+  let sp = document.querySelector(".boot");
+  if (!sp) { sp = document.createElement("div"); sp.className = "boot"; sp.innerHTML = logo; }
+  sp.classList.remove("out");
+  if (sp.parentNode !== document.body) document.body.appendChild(sp);   // superposé : la vue se prépare dessous
+  return sp;
+}
+function hideSplash() {
+  document.querySelectorAll("body > .boot").forEach(sp => { sp.classList.add("out"); setTimeout(() => sp.remove(), 260); });
 }
 const epOf = (id, s, e) => needSeason(id, s)?.episodes?.find(x => x.episode_number === e);
 
@@ -181,7 +262,7 @@ function later() {
 store.onChange(st => {
   if (store.hasFirebase && !st.user) return renderAuth();
   if (st.user && ui.mode === "auth") return startApp();
-  later();
+  quietRender();
 });
 
 // ═════════════ Navigation ═════════════
@@ -200,8 +281,8 @@ function fixDomain() { if (!ui.domains[ui.domain]) ui.domain = ui.domains.av ? "
 fixDomain();
 const curTabs = () => ui.domain === "games" ? G_TABS : AV_TABS;
 function renderTabs(badge = 0) {
-  $("#tabs").innerHTML = curTabs().map(([k, l, ic]) =>
-    `<button data-a="tab" data-v="${k}" class="${ui.tab === k ? "on" : ""}">${ic}${l}${k === "games" && unseenGames() ? `<i class="dot">${unseenGames()}</i>` : ""}</button>`).join("");
+  patch($("#tabs"), curTabs().map(([k, l, ic]) =>
+    `<button data-a="tab" data-v="${k}" class="${ui.tab === k ? "on" : ""}">${ic}${l}${k === "games" && unseenGames() ? `<i class="dot">${unseenGames()}</i>` : ""}</button>`).join(""));
 }
 function go(tab) {
   tab = TAB_ALIAS[tab] || tab;
@@ -214,6 +295,7 @@ function go(tab) {
 function renderView(force) {
   if (ui.mode !== "app") return;
   if (sheets.length && !force) { ui.dirty = true; return; }
+  held = false;
   const v = $("#view");
   if (TAB_ALIAS[ui.tab]) ui.tab = TAB_ALIAS[ui.tab];
   ({ series: vSeries, upcoming: vUpcoming, movies: vMovies, discover: vExplore, profile: vProfile,
@@ -754,8 +836,8 @@ function needGame(id) {
   if (!requested.has(k)) {
     requested.add(k);
     (async () => {
-      if (!gameD.has(id)) { const c = await rawg.peek(`/games/${id}`); if (c) { gameD.set(id, c); later(); } }
-      try { gameD.set(id, await rawg.game(id)); later(); } catch (e) { gameErr(e); }
+      if (!gameD.has(id)) { const c = await rawg.peek(`/games/${id}`); if (c && !gameD.has(id)) { gameD.set(id, c); quietRender(); } }
+      try { const v = await net(rawg.game(id)); const had = gameD.has(id); if (setIfChanged(gameD, id, v)) had ? laterNet() : quietRender(); } catch (e) { gameErr(e); }
     })();
   }
   return gameD.get(id);
@@ -1035,7 +1117,7 @@ function closeTopSheet() {
   const sh = sheets.pop(); if (!sh) return;
   sh.el.classList.remove("in");
   setTimeout(() => sh.el.remove(), 330);
-  if (!sheets.length) { document.body.style.overflow = ""; if (ui.dirty) { ui.dirty = false; renderView(true); } }
+  if (!sheets.length) { document.body.style.overflow = ""; if (ui.dirty || held) { ui.dirty = false; renderView(true); } }
 }
 let ignorePop = false;
 function closeAllSheets() {
@@ -1405,6 +1487,8 @@ const A = {
   }
 };
 
+// Geste de l'utilisateur : pendant 2 s, les mises à jour s'affichent tout de suite (il attend une réaction)
+["click", "input", "change", "keydown"].forEach(t => document.addEventListener(t, () => { tapAt = performance.now(); }, true));
 document.addEventListener("click", ev => {
   const el = ev.target.closest("[data-a]"); if (!el) return;
   const fn = A[el.dataset.a]; if (!fn) return;
@@ -1526,7 +1610,7 @@ function toast(msg, action, fn, ms) {
 }
 
 // ═════════════ Écrans clé / auth ═════════════
-function bare(html) { $("#tabs").classList.add("hidden"); $("#view").innerHTML = `<div class="full">${html}</div>`; $("#view").style.padding = "0"; }
+function bare(html) { document.querySelectorAll("body > .boot").forEach(x => x.remove()); $("#tabs").classList.add("hidden"); $("#view").innerHTML = `<div class="full">${html}</div>`; $("#view").style.padding = "0"; }
 const logo = `<div class="logo"><img src="icons/icon-192.png" alt=""><b>Playwatch</b></div>`;
 
 function renderKey() {
@@ -1587,14 +1671,35 @@ const authErr = e => ({
 }[e.code] || e.message);
 
 // ═════════════ Démarrage ═════════════
-function startApp() {
-  ui.mode = "app";
-  $("#tabs").classList.remove("hidden"); $("#view").style.padding = "";
+let startRun = 0;
+async function startApp() {
+  const run = ++startRun;
+  ui.mode = "loading";
+  showSplash();
   const h = location.hash.slice(1);
   if (TABS.some(t => t[0] === h && ui.domains[domainOf(h)]) || h === "profile" || h === "settings") ui.tab = h; else ui.tab = ui.lastTab[ui.domain];
   if (ui.tab !== "profile" && ui.tab !== "settings") ui.domain = domainOf(ui.tab);
+  const t0 = Date.now();
+  let pushDone = false;
+  const pushP = push.status().then(s => { ui.pushStatus = s; pushDone = true; }).catch(() => { pushDone = true; });
+  await whenStoreReady(t0 + 5000);
+  if (run !== startRun || ui.mode !== "loading") return;
+  const deadline = Math.min(Date.now() + 2500, t0 + 4500);
+  await Promise.all([
+    navigator.onLine ? store.whenSynced(Math.max(0, deadline - Date.now())) : null,
+    preloadShows(deadline),
+    preloadMovies(),
+    until(pushP, deadline)
+  ]);
+  await preloadShows(deadline);   // séries ajoutées depuis un autre appareil pendant l'attente
+  if (run !== startRun || ui.mode !== "loading") return;
+  ui.mode = "app";
+  $("#tabs").classList.remove("hidden"); $("#view").style.padding = "";
   renderView(true);
-  push.status().then(s => { ui.pushStatus = s; renderView(); }).catch(() => { });
+  await imgsReady($("#view"), 800);
+  if (run !== startRun) return;
+  hideSplash();
+  if (!pushDone) pushP.then(quietRender);
   push.refresh();
 }
 
@@ -1632,6 +1737,9 @@ window.addEventListener("load", () => {
 // Ouvrir l'app = notifications lues : on efface le badge de l'icône et les notifs du centre de notifications
 function clearNotifs() { push.clearAll(); }
 clearNotifs();
-document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { clearNotifs(); if (ui.mode === "app") { requested.clear(); later(); } } });
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") { if (held && ui.mode === "app") renderView(); return; }
+  clearNotifs(); if (ui.mode === "app") { requested.clear(); later(); }
+});
 
 boot();
