@@ -1,5 +1,5 @@
 // Playwatch — service worker : cache hors-ligne + notifications push
-const VERSION = "bobine-v27";
+const VERSION = "bobine-v28";
 const SHELL = [
   "./", "./index.html", "./manifest.webmanifest", "./css/app.css",
   "./js/app.js", "./js/config.js", "./js/tmdb.js", "./js/store.js", "./js/push.js", "./js/import-tvtime.js", "./js/rawg.js", "./js/premium.js",
@@ -7,6 +7,7 @@ const SHELL = [
 ];
 const IMG_CACHE = "bobine-img";
 const IMG_MAX = 600;
+let slowUntil = 0;   // réseau lent repéré : on sert la copie locale sans attendre pendant 15 s
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -39,15 +40,25 @@ self.addEventListener("fetch", e => {
     return;
   }
 
-  // App : réseau d'abord, cache en secours (mises à jour immédiates)
+  // App : réseau d'abord (mises à jour immédiates), mais si le réseau traîne plus de 3 s on sert la copie locale
+  // pour ne jamais rester bloqué sur le logo ; la réponse réseau, quand elle arrive, met la copie à jour.
   if (url.origin === location.origin) {
+    const net = fetch(req).then(res => {
+      if (res.ok) { const copy = res.clone(); caches.open(VERSION).then(c => c.put(req, copy)).catch(() => { }); }
+      return res;
+    });
+    e.waitUntil(net.then(() => { }, () => { }));
     e.respondWith((async () => {
+      const local = () => caches.match(req, { ignoreSearch: true }).then(r => r || (req.mode === "navigate" ? caches.match("./index.html") : null)).catch(() => null);
+      // Réseau déjà repéré comme lent : copie locale tout de suite pour les fichiers suivants
+      if (Date.now() < slowUntil) { const c = await local(); if (c) return c; }
       try {
-        const res = await fetch(req);
-        if (res.ok) caches.open(VERSION).then(c => c.put(req, res.clone()));
-        return res;
+        return await Promise.race([net, new Promise((_, rej) => setTimeout(() => rej(new Error("lent")), 3000))]);
       } catch {
-        return (await caches.match(req, { ignoreSearch: true })) || (req.mode === "navigate" ? caches.match("./index.html") : Response.error());
+        slowUntil = Date.now() + 15000;
+        const c = await local();
+        if (c) return c;
+        try { return await net; } catch { return Response.error(); }
       }
     })());
   }
