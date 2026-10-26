@@ -17,5 +17,24 @@ service cloud.firestore {
     match /purchases/{id} {
       allow read, write: if false;
     }
+    // Journal des plantages : tout appareil peut AJOUTER une erreur (même avant connexion), format strict ;
+    // seuls les administrateurs (adresse vérifiée) peuvent les lire et les effacer.
+    match /errors/{id} {
+      allow create: if request.resource.data.keys().hasOnly(['msg', 'stack', 'where', 'tab', 'mode', 'v', 'ua', 'standalone', 'online', 'at', 'url', 'uid', 'email', 'ts'])
+        && request.resource.data.msg is string && request.resource.data.msg.size() <= 600
+        && (!('stack' in request.resource.data) || (request.resource.data.stack is string && request.resource.data.stack.size() <= 2000))
+        && (!('ua' in request.resource.data) || (request.resource.data.ua is string && request.resource.data.ua.size() <= 400))
+        && (!('uid' in request.resource.data) || request.resource.data.uid == null || (request.auth != null && request.resource.data.uid == request.auth.uid));
+      allow read, delete: if isAdmin();
+      allow update: if false;
+    }
+    // Cache du calendrier abonnable : serveur uniquement.
+    match /calcache/{id} {
+      allow read, write: if false;
+    }
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email_verified == true
+        && request.auth.token.email in ['gael.bodevin@gmail.com', 'bluecellproduction@gmail.com', 'fast.and.spermious@gmail.com'];
+    }
   }
 }

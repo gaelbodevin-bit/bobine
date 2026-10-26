@@ -1,20 +1,29 @@
 // Playwatch — service worker : cache hors-ligne + notifications push
-const VERSION = "bobine-v29";
+const VERSION = "bobine-v30";
 const SHELL = [
   "./", "./index.html", "./manifest.webmanifest", "./css/app.css",
   "./js/app.js", "./js/config.js", "./js/tmdb.js", "./js/store.js", "./js/push.js", "./js/import-tvtime.js", "./js/rawg.js", "./js/premium.js",
   "./icons/icon-192.png", "./icons/icon-512.png", "./icons/apple-touch-icon.png"
 ];
 const IMG_CACHE = "bobine-img";
+// Firebase (chargé depuis gstatic) : gardé sur le téléphone pour pouvoir ouvrir l'app sans réseau.
+// Les URL sont versionnées (le contenu ne change jamais) → cache d'abord. Garder FB_V aligné sur js/store.js.
+const LIB_CACHE = "bobine-lib";
+const FB_V = "12.19.0";
+const LIBS = ["firebase-app.js", "firebase-auth.js", "firebase-firestore.js"].map(f => `https://www.gstatic.com/firebasejs/${FB_V}/${f}`);
 const IMG_MAX = 600;
 let slowUntil = 0;   // réseau lent repéré : on sert la copie locale sans attendre pendant 15 s
 
 self.addEventListener("install", e => {
-  e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(Promise.all([
+    caches.open(VERSION).then(c => c.addAll(SHELL)),
+    // au mieux : un échec ici (réseau) ne doit pas bloquer la mise à jour de l'app
+    caches.open(LIB_CACHE).then(c => Promise.all(LIBS.map(u => c.match(u).then(hit => hit || c.add(new Request(u, { mode: "cors" }))).catch(() => { }))))
+  ]).then(() => self.skipWaiting()));
 });
 self.addEventListener("activate", e => {
   e.waitUntil((async () => {
-    for (const k of await caches.keys()) if (k !== VERSION && k !== IMG_CACHE) await caches.delete(k);
+    for (const k of await caches.keys()) if (k !== VERSION && k !== IMG_CACHE && k !== LIB_CACHE) await caches.delete(k);
     await self.clients.claim();
   })());
 });
@@ -36,6 +45,19 @@ self.addEventListener("fetch", e => {
         c.put(req, res.clone()).then(() => trim(c));
         return res;
       } catch { return new Response("", { status: 504 }); }
+    })());
+    return;
+  }
+
+  // Firebase : cache d'abord (fichiers versionnés), réseau sinon
+  if (url.hostname === "www.gstatic.com" && url.pathname.startsWith("/firebasejs/")) {
+    e.respondWith((async () => {
+      const c = await caches.open(LIB_CACHE);
+      const hit = await c.match(req, { ignoreVary: true }) || await c.match(url.href, { ignoreVary: true });
+      if (hit) return hit;
+      const res = await fetch(req);
+      if (res.ok) c.put(url.href, res.clone()).catch(() => { });
+      return res;
     })());
     return;
   }
