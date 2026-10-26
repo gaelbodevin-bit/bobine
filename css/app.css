@@ -331,3 +331,55 @@ img{display:block;max-width:100%}
 .btn.nextep.done .tick svg{opacity:1;transform:none}
 .btn.nextep .lbl{display:flex;flex-direction:column;align-items:flex-start;line-height:1.15;font-variant-numeric:tabular-nums;min-width:0}
 .btn.nextep .lbl small{font-size:11px;font-weight:600;color:var(--mu);letter-spacing:.02em}
+
+/* Interrupteurs (Paramètres) */
+input.tgl{-webkit-appearance:none;appearance:none;width:48px;height:29px;border-radius:15px;background:var(--s3);position:relative;flex:none;cursor:pointer;transition:background .2s;margin:0 0 0 12px}
+input.tgl::after{content:"";position:absolute;top:3px;left:3px;width:23px;height:23px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #0006;transition:transform .2s}
+input.tgl:checked{background:var(--ac)}
+input.tgl:checked::after{transform:translateX(19px)}
+.linkbtn{display:block;width:100%;margin-top:12px;color:var(--mu);font-size:13px;text-decoration:underline;text-underline-offset:3px}
+/* Mode sans spoiler */
+.nsp{overflow:hidden}
+.nsp img{filter:blur(16px) saturate(.6) brightness(.8);transform:scale(1.25)}
+.nspbox{display:flex;gap:12px;align-items:center;width:100%;text-align:left;background:var(--s1);border:1px dashed var(--s3);border-radius:14px;padding:14px;margin:12px 0;color:var(--mu);font-size:14px}
+.nspbox svg{width:22px;height:22px;color:var(--ac);flex:none}
+.nspbox b{display:block;color:var(--tx);font-size:15px;margin-bottom:2px}
+/* Journal des plantages */
+.errrow{background:var(--s1);border-radius:12px;margin-bottom:8px;overflow:hidden}
+.errrow summary{list-style:none;padding:12px 14px;cursor:pointer}
+.errrow summary::-webkit-details-marker{display:none}
+.errrow summary b{display:block;font-size:14px;word-break:break-word}
+.errrow summary small{display:block;color:var(--mu);font-size:12px;margin-top:4px;line-height:1.45}
+.errrow pre{margin:0;padding:10px 14px 14px;font-size:11px;line-height:1.4;color:var(--mu);white-space:pre-wrap;word-break:break-word;border-top:1px solid var(--line)}
+/* Rétrospective */
+.recapc>svg:first-child{color:var(--ac)}
+.recap .rc-hero{padding:18px 0 6px}
+.recap .rc-hero small{color:var(--ac);font-weight:800;letter-spacing:.2em;font-size:12px}
+.recap .rc-hero h1{font-size:40px;line-height:1.05;margin:6px 0 6px;letter-spacing:-.03em}
+.recap .rc-hero p{margin:0;color:var(--mu)}
+.recap .rc-big{margin:22px 0 14px;padding:22px;border-radius:22px;background:linear-gradient(135deg,color-mix(in srgb,var(--ac) 22%,var(--s1)),var(--s1))}
+.recap .rc-big b{display:block;font-size:64px;line-height:1;color:var(--ac);letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.recap .rc-big span{display:block;font-weight:700;font-size:18px;margin-top:6px}
+.recap .rc-big small{display:block;color:var(--mu);margin-top:4px}
+.recap .rc-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.recap .rc-grid div{background:var(--s1);border-radius:14px;padding:12px 8px;text-align:center}
+.recap .rc-grid b{display:block;font-size:22px;font-variant-numeric:tabular-nums}
+.recap .rc-grid span{font-size:11.5px;color:var(--mu)}
+.recap .rc-h{margin:24px 0 10px;font-size:18px}
+.recap .rc-row{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:8px 0;color:var(--tx)}
+.recap .rc-row b{display:block;font-size:15px}
+.recap .rc-row small{color:var(--mu);font-size:13px}
+.recap .rc-n{width:22px;font-weight:900;color:var(--ac);font-size:18px;text-align:center;flex:none}
+.recap .rc-p{width:46px;aspect-ratio:2/3;border-radius:8px;overflow:hidden;background:var(--s2);flex:none}
+.recap .rc-p img{width:100%;height:100%;object-fit:cover}
+.recap .rc-p .noimg{font-size:8px;padding:3px}
+.recap .rc-games{display:flex;gap:10px;overflow-x:auto;padding-bottom:4px}
+.recap .rc-games div{width:130px;flex:none}
+.recap .rc-games img{width:130px;aspect-ratio:16/10;object-fit:cover;border-radius:10px;display:block;background:var(--s2)}
+.recap .rc-games small{display:block;font-size:12px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.recap .rc-tags{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:22px}
+.recap .rc-tags div{background:var(--s1);border-radius:14px;padding:12px}
+.recap .rc-tags small{display:block;color:var(--mu);font-size:12px}
+.recap .rc-tags b{font-size:15px}
+.recap .rc-note{color:var(--mu2,var(--mu));font-size:11.5px;line-height:1.5;margin:14px 0 30px}
+.banner.recapb>svg:first-child{color:var(--ac);width:22px;height:22px;flex:none}
