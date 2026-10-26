@@ -80,7 +80,7 @@ const pimg = (path, alt, size = "w342") => path
 // ═════════════ État UI + caches de détails ═════════════
 const ui = { tab: "series", seriesFilter: "watching", sugSeg: "movie", sug: {}, movieSeg: "watchlist", seriesView: (() => { try { return localStorage.getItem("bobine:sview") || "grid"; } catch { return "grid"; } })(), q: "", pushStatus: null, mode: null };
 ui.nospoil = (() => { try { return localStorage.getItem("bobine:nospoil") === "1"; } catch { return false; } })();
-const APP_V = "v30";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
+const APP_V = "v31";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
 const ADMINS = ["gael.bodevin@gmail.com", "bluecellproduction@gmail.com", "fast.and.spermious@gmail.com"];
 const isAdmin = () => ADMINS.includes((store.data.user?.email || "").toLowerCase());
 
@@ -368,6 +368,17 @@ function actKey(x) {
     k = Math.max(k, dParse(la.air_date).getTime());
   return k;
 }
+// Étiquette « NOUVEL ÉP. » : une sortie de moins de 7 jours dont on n'a encore vu AUCUN épisode.
+// La sortie = les épisodes de la saison diffusés le même jour que le dernier (saison mise en ligne d'un coup,
+// ou épisode de la semaine). Dès qu'un de ces épisodes est vu, l'étiquette disparaît.
+function isFresh(show, la, nowISO = isoToday()) {
+  if (!(la?.air_date && la.season_number > 0 && daysFrom(la.air_date) >= -7 && la.air_date <= nowISO)) return false;
+  if (isWatched(show, la.season_number, la.episode_number)) return false;
+  const sea = seasons.get(show.id + ":" + la.season_number);
+  if (sea?.episodes?.length) return !sea.episodes.some(e => e.air_date === la.air_date && isWatched(show, la.season_number, e.episode_number));
+  // Détail de la saison pas encore chargé : un visionnage depuis le jour de la sortie suffit
+  return !(show.lastWatchedAt && show.lastWatchedAt >= dParse(la.air_date).getTime() - 12 * 3600e3);
+}
 // Liste "En cours" : prochain épisode de chaque série, la dernière regardée en haut
 function upNextItems(c) {
   const nowISO = isoToday();
@@ -375,7 +386,7 @@ function upNextItems(c) {
     const ep = x.p?.next ? epOf(x.s.id, x.p.next.s, x.p.next.e) : null;
     const air = ep?.air_date || (x.p?.next && x.t?.last_episode_to_air && x.t.last_episode_to_air.season_number === x.p.next.s && x.t.last_episode_to_air.episode_number === x.p.next.e ? x.t.last_episode_to_air.air_date : null);
     const la = x.t?.last_episode_to_air;
-    const fresh = !!(la?.air_date && la.season_number > 0 && daysFrom(la.air_date) >= -7 && la.air_date <= nowISO && !isWatched(x.s, la.season_number, la.episode_number));
+    const fresh = isFresh(x.s, la, nowISO);
     return { ...x, ep, air, fresh, la };
   }).sort((a, b) => actKey(b) - actKey(a));
 }
