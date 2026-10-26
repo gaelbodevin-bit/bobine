@@ -383,3 +383,30 @@ input.tgl:checked::after{transform:translateX(19px)}
 .recap .rc-tags b{font-size:15px}
 .recap .rc-note{color:var(--mu2,var(--mu));font-size:11.5px;line-height:1.5;margin:14px 0 30px}
 .banner.recapb>svg:first-child{color:var(--ac);width:22px;height:22px;flex:none}
+
+/* Recherche : bouton Annuler + barre d'onglets cachée pendant la saisie (clavier iPhone) */
+.srow{position:sticky;top:calc(var(--st) + 4px);z-index:5;display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.srow .search{position:static;flex:1;min-width:0;margin:0}
+.scancel{display:none;color:var(--ac);font-weight:650;font-size:15px;padding:8px 2px;flex:none}
+.srow.on .scancel{display:block}
+body.kb #tabs{display:none}
+/* Animés : derniers épisodes (vignettes paysage) */
+.ac{width:212px;flex:none;text-align:left;scroll-snap-align:start}
+.ac .p{aspect-ratio:16/9;border-radius:10px;overflow:hidden;background:var(--s2);position:relative}
+.ac .p img{width:100%;height:100%;object-fit:cover}
+.ac .p .noimg{display:grid;place-items:center;height:100%;font-size:12px;padding:8px;text-align:center;color:var(--mu)}
+.ac .ep{position:absolute;left:6px;bottom:6px;background:#000000b8;color:#fff;font-size:11.5px;font-weight:800;padding:3px 7px;border-radius:6px;font-variant-numeric:tabular-nums}
+.ac .t{font-size:13px;font-weight:650;margin-top:6px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+.ac .s{font-size:11.5px;color:var(--mu);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Jeux : bannière des sorties (explique la pastille rouge) */
+.banner.gbanner{background:linear-gradient(135deg,color-mix(in srgb,var(--bad) 18%,var(--s1)),var(--s1));border-color:color-mix(in srgb,var(--bad) 40%,transparent)}
+.banner.gbanner>svg:first-child{color:var(--bad)}
+.banner.gbanner small{color:var(--mu)}
+/* Fiche jeu : heures de jeu */
+.hours{display:flex;align-items:center;gap:10px;background:var(--s1);border-radius:12px;padding:8px 12px;margin:4px 0 12px}
+.hours>svg{width:18px;height:18px;color:var(--ac);flex:none}
+.hours span{flex:1;font-size:14px}
+.hours small{color:var(--mu);font-size:12px}
+.hours input{width:78px;background:var(--s2);border:1px solid var(--s3);border-radius:9px;padding:7px 8px;font-size:16px;text-align:right;color:var(--tx);font-variant-numeric:tabular-nums}
+.hours input:focus{outline:none;border-color:var(--ac)}
+.hours b{color:var(--mu);font-weight:600}
