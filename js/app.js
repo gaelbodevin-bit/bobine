@@ -80,7 +80,7 @@ const pimg = (path, alt, size = "w342") => path
 // ═════════════ État UI + caches de détails ═════════════
 const ui = { tab: "series", seriesFilter: "watching", sugSeg: "movie", sug: {}, movieSeg: "watchlist", seriesView: (() => { try { return localStorage.getItem("bobine:sview") || "grid"; } catch { return "grid"; } })(), q: "", pushStatus: null, mode: null };
 ui.nospoil = (() => { try { return localStorage.getItem("bobine:nospoil") === "1"; } catch { return false; } })();
-const APP_V = "v31";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
+const APP_V = "v32";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
 const ADMINS = ["gael.bodevin@gmail.com", "bluecellproduction@gmail.com", "fast.and.spermious@gmail.com"];
 const isAdmin = () => ADMINS.includes((store.data.user?.email || "").toLowerCase());
 
@@ -659,12 +659,44 @@ function vMovies(v) {
 let searchT, searchSeq = 0;
 function vExplore(v, force) {
   if (!force && $("#q")) { renderResults(); return; }
-  v.innerHTML = top("Découvrir", "", profileBtn) + `<label class="search">${I.search}<input id="q" type="search" placeholder="Rechercher une série, un film…" autocomplete="off" autocapitalize="off" enterkeyhint="search" value="${esc(ui.q)}"></label><div id="results"></div>`;
+  v.innerHTML = top("Découvrir", "", profileBtn) + searchRow("q", "Rechercher une série, un film…", ui.q) + `<div id="results"></div>`;
   $("#q").addEventListener("input", e => { ui.q = e.target.value; clearTimeout(searchT); searchT = setTimeout(doSearch, 320); });
   $("#q").addEventListener("keydown", e => { if (e.key === "Enter") { e.target.blur(); clearTimeout(searchT); doSearch(); } });
   if (ui.q && !ui.results) doSearch(); else renderResults();
   if (!ui.discover) loadDiscover();
+  loadAnime();
   loadSug(ui.sugSeg);
+}
+// Barre de recherche + bouton « Annuler » (visible pendant la saisie ou s'il y a une recherche en cours)
+const searchRow = (id, ph, val) => `<div class="srow ${val ? "on" : ""}"><label class="search">${I.search}<input id="${id}" type="search" placeholder="${ph}" autocomplete="off" autocapitalize="off" enterkeyhint="search" value="${esc(val || "")}"></label><button class="scancel" data-a="qcancel" data-v="${id}">Annuler</button></div>`;
+
+// ── Animés : derniers épisodes sortis (façon VoirAnime) ──
+async function loadAnime() {
+  if (ui.anime && (ui.anime === "loading" || Date.now() - ui.animeAt < 3 * 3600e3)) return;
+  ui.anime = "loading";
+  try {
+    const td = isoToday(), from = new Date(Date.now() - 10 * DAY).toISOString().slice(0, 10);
+    const pages = await Promise.all([1, 2].map(page => tmdb.get("/discover/tv", { with_genres: "16", with_original_language: "ja", "air_date.gte": from, "air_date.lte": td, sort_by: "popularity.desc", page }, { ttl: 3 })));
+    const seen = new Set(), list = pages.flatMap(p => p.results || []).filter(x => !seen.has(x.id) && seen.add(x.id)).slice(0, 24);
+    const det = await Promise.all(list.map(x => tmdb.tv(x.id).catch(() => null)));
+    ui.anime = det.map((t, i) => t && { id: list[i].id, pop: list[i].popularity || 0, t, la: t.last_episode_to_air })
+      .filter(x => x?.la?.air_date && x.la.air_date <= td && x.la.air_date >= from && x.la.season_number > 0)
+      .sort((a, b) => a.la.air_date < b.la.air_date ? 1 : a.la.air_date > b.la.air_date ? -1 : b.pop - a.pop);
+    ui.animeAt = Date.now();
+  } catch (e) { onErr(e); ui.anime = []; ui.animeAt = Date.now(); }
+  if (ui.tab === "discover" && !Array.isArray(ui.results)) renderResults();
+}
+function animeHtml() {
+  const A = ui.anime;
+  const h = sec("Animés · derniers épisodes") + `<div class="sugsub">Les sorties japonaises de ces 10 derniers jours, les plus récentes d'abord</div>`;
+  if (!Array.isArray(A)) return h + `<div class="row">${Array.from({ length: 3 }, () => `<div class="ac"><div class="p sk"></div></div>`).join("")}</div>`;
+  if (!A.length) return "";
+  return h + `<div class="row">${A.map(x => {
+    const s = store.data.shows.get(x.id), la = x.la, hide = s && hideEp(s, la.season_number, la.episode_number);
+    const pic = la.still_path && !hide ? img(la.still_path, "w300") : img(x.t.backdrop_path || x.t.poster_path, "w300");
+    const d = daysFrom(la.air_date);
+    return `<button class="ac" data-a="tv" data-id="${x.id}"><div class="p">${pic ? `<img src="${pic}" alt="" loading="lazy">` : `<div class="noimg">${esc(x.t.name)}</div>`}<span class="ep">${nSeasons(x.t) > 1 ? `S${la.season_number} · ` : ""}Ép. ${la.episode_number}</span>${d >= -1 ? `<span class="newb">NOUVEAU</span>` : ""}${s ? `<span class="badge">${I.check}</span>` : ""}</div><div class="t">${esc(x.t.name)}</div><div class="s">${esc(rel(la.air_date))}${!hide && la.name && !/^Épisode \d+$/.test(la.name) ? " · " + esc(la.name) : ""}</div></button>`;
+  }).join("")}</div>`;
 }
 async function doSearch() {
   const q = ui.q.trim(); const seq = ++searchSeq;
@@ -697,7 +729,7 @@ function renderResults() {
     return;
   }
   const d = ui.discover || {};
-  r.innerHTML = sugHtml() + discoverRows(d);
+  r.innerHTML = animeHtml() + sugHtml() + discoverRows(d);
 }
 function discoverRows(d) {
   const row = (arr) => `<div class="row">${(arr || []).slice(0, 20).map(x => `<button class="pc" data-a="${x.media_type === "tv" ? "tv" : "mv"}" data-id="${x.id}"><div class="p">${pimg(x.poster_path, x.name || x.title)}${inLib(x) ? `<span class="badge">${I.check}</span>` : ""}</div><div class="t">${esc(x.name || x.title)}</div><div class="s">${x.media_type === "tv" ? "Série" : "Film"} · ${year(x.first_air_date || x.release_date)}</div></button>`).join("")}</div>`;
@@ -778,7 +810,8 @@ function profStats() {
     <div class="stat"><b>${mw.length}</b><span>films vus · ${dur(mmin)}</span></div>` + (ui.domains.games ? (() => {
     const gs = [...store.data.games.values()];
     const done = gs.filter(g => g.status === "beaten" || g.status === "completed").length;
-    return `<div class="stat"><b>${gs.filter(g => g.status === "playing").length}</b><span>jeux en cours</span></div><div class="stat"><b>${done}</b><span>jeux terminés</span></div>`;
+    const gh = gs.reduce((n, g) => n + (g.hours || 0), 0);
+    return `<div class="stat"><b>${gs.filter(g => g.status === "playing").length}</b><span>jeux en cours</span></div><div class="stat"><b>${done}</b><span>jeux terminés</span></div>${gh ? `<div class="stat"><b>${Math.round(gh).toLocaleString("fr-FR")} h</b><span>de jeu</span></div>` : ""}`;
   })() : "");
 }
 function pushCard() {
@@ -868,6 +901,8 @@ function advStats() {
   // Jeux
   if (ui.domains.games && games.length) {
     h += block("Plateformes de jeux", bars(count(games.map(g => g.platform)).slice(0, 5)) );
+    const timed = games.filter(g => g.hours > 0).sort((a, b) => b.hours - a.hours);
+    if (timed.length) h += block(`Temps de jeu · ${Math.round(timed.reduce((n, g) => n + g.hours, 0)).toLocaleString("fr-FR")} h au total`, bars(timed.slice(0, 5).map(g => [g.name, g.hours])));
     const gg = count(games.flatMap(g => (g.genres || []).map(x => x.name || x))).slice(0, 5);
     h += block("Genres de jeux", gg.length ? bars(gg) : "");
   }
@@ -961,10 +996,11 @@ function computeRecap(Y) {
   const games = ui.domains.games ? [...store.data.games.values()].filter(g => inY(g.finishedAt)) : [];
   const weigh = f => { const m = new Map(); per.forEach(x => (f(x) || []).forEach(k => k && m.set(k, (m.get(k) || 0) + x.n))); return [...m.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || ""; };
   const smin = per.reduce((n, x) => n + x.min, 0), mmin = mv.reduce((n, m) => n + (m.runtime || movieD.get(m.id)?.runtime || 110), 0);
+  const gh = games.reduce((n, g) => n + (g.hours || 0), 0);   // heures saisies sur les jeux terminés cette année
   const finished = per.filter(x => x.t && !progress(x.s, x.t).next && ["Ended", "Canceled"].includes(x.t.status)).length;
   const best = months.indexOf(Math.max(...months));
   return {
-    Y, per, eps: per.reduce((n, x) => n + x.n, 0), shows: per.length, finished, smin, mmin, hours: Math.round((smin + mmin) / 60),
+    Y, per, eps: per.reduce((n, x) => n + x.n, 0), shows: per.length, finished, smin, mmin, gh, hours: Math.round((smin + mmin) / 60 + gh),
     movies: mv, topMovie: mv[0] || null, rated: mv.filter(m => m.rating), games,
     genre: weigh(x => x.t?.genres), network: weigh(x => x.t?.networks?.slice(0, 1)),
     month: dated >= 8 && months[best] ? new Date(Y, best, 1).toLocaleDateString("fr-FR", { month: "long" }) : ""
@@ -978,11 +1014,11 @@ function openRecap(Y) {
     if (!r.eps && !r.movies.length && !r.games.length) return `<div class="body recap"><div class="rc-hero"><small>PLAYWATCH</small><h1>Ta rétro ${Y}</h1></div><div class="empty" style="padding:30px 10px">${I.spark}<h3>Pas encore assez de visionnages</h3><p>Coche tes épisodes et tes films au fil de l'année : ta rétro se construit toute seule.</p></div></div>`;
     const poster = (p, n) => `<div class="rc-p">${p ? `<img src="${img(p, "w185")}" alt="" loading="lazy">` : `<div class="noimg">${esc(n)}</div>`}</div>`;
     let h = `<div class="body recap"><div class="rc-hero"><small>PLAYWATCH</small><h1>Ta rétro ${Y}</h1><p>${r.month ? `Ton mois le plus chargé : <b>${esc(r.month)}</b>` : "Ton année en séries, films et jeux"}</p></div>
-      <div class="rc-big"><b>${nf(r.hours)}</b><span>heures devant l'écran</span><small>${nf(Math.round(r.smin / 60))} h de séries · ${nf(Math.round(r.mmin / 60))} h de films</small></div>
+      <div class="rc-big"><b>${nf(r.hours)}</b><span>heures devant l'écran</span><small>${nf(Math.round(r.smin / 60))} h de séries · ${nf(Math.round(r.mmin / 60))} h de films${r.gh ? ` · ${nf(Math.round(r.gh))} h de jeu` : ""}</small></div>
       <div class="rc-grid"><div><b>${nf(r.eps)}</b><span>épisodes</span></div><div><b>${r.shows}</b><span>séries</span></div><div><b>${r.movies.length}</b><span>films</span></div>${ui.domains.games ? `<div><b>${r.games.length}</b><span>jeux finis</span></div>` : `<div><b>${r.finished}</b><span>séries finies</span></div>`}</div>`;
     if (r.per.length) h += `<h3 class="rc-h">Tes séries de l'année</h3>` + r.per.slice(0, 5).map((x, i) => `<button class="rc-row" data-a="tv" data-id="${x.s.id}"><span class="rc-n">${i + 1}</span>${poster(x.t?.poster_path || x.s.poster_path, x.s.name)}<div><b>${esc(x.t?.name || x.s.name)}</b><small>${plural(x.n, "épisode")} · ${dur(x.min)}</small></div></button>`).join("");
     if (r.topMovie) { const m = r.topMovie; h += `<h3 class="rc-h">${m.rating ? "Ton film préféré" : "Ton dernier film"}</h3><button class="rc-row" data-a="mv" data-id="${m.id}">${poster(m.poster_path, m.title)}<div><b>${esc(m.title)}</b><small>${m.rating ? "★".repeat(m.rating) + " · " : ""}vu le ${esc(new Date(m.watchedAt).toLocaleDateString("fr-FR", { day: "numeric", month: "long" }))}${r.rated.length ? ` · moyenne ${(r.rated.reduce((n, x) => n + x.rating, 0) / r.rated.length).toFixed(1).replace(".", ",")}★` : ""}</small></div></button>`; }
-    if (r.games.length) h += `<h3 class="rc-h">Jeux terminés</h3><div class="rc-games">${r.games.slice(0, 8).map(g => `<div>${g.background_image ? `<img src="${esc(gimg(g.background_image))}" alt="" loading="lazy">` : ""}<small>${esc(g.name)}</small></div>`).join("")}</div>`;
+    if (r.games.length) h += `<h3 class="rc-h">Jeux terminés</h3><div class="rc-games">${r.games.slice(0, 8).map(g => `<div>${g.background_image ? `<img src="${esc(gimg(g.background_image))}" alt="" loading="lazy">` : ""}<small>${esc(g.name)}${g.hours ? ` · ${String(g.hours).replace(".", ",")} h` : ""}</small></div>`).join("")}</div>`;
     const tags = [r.genre && ["Genre préféré", r.genre], r.network && ["Chaîne / plateforme", r.network], r.finished && ["Séries terminées", r.finished]].filter(Boolean);
     if (tags.length) h += `<div class="rc-tags">${tags.map(([k, v]) => `<div><small>${k}</small><b>${esc(String(v))}</b></div>`).join("")}</div>`;
     h += `<button class="btn pri big" data-a="recapShare" style="width:100%;margin-top:20px">${I.share}Partager mon image</button>
@@ -1020,7 +1056,7 @@ async function drawRecap(r, withImages) {
   // Grand chiffre
   x.fillStyle = ac; x.font = F(900, 250); x.fillText(nf(r.hours), 80, 620);
   x.fillStyle = tx; x.font = F(700, 52); x.fillText("heures devant l'écran", 90, 700);
-  x.fillStyle = mu; x.font = F(500, 36); x.fillText(`${nf(Math.round(r.smin / 60))} h de séries · ${nf(Math.round(r.mmin / 60))} h de films`, 90, 760);
+  x.fillStyle = mu; x.font = F(500, 36); x.fillText(fit(`${nf(Math.round(r.smin / 60))} h de séries · ${nf(Math.round(r.mmin / 60))} h de films${r.gh ? ` · ${nf(Math.round(r.gh))} h de jeu` : ""}`, W - 180), 90, 760);
   // Tuiles
   const tiles = [[nf(r.eps), "épisodes"], [String(r.shows), "séries"], [String(r.movies.length), "films"], ui.domains.games ? [String(r.games.length), "jeux finis"] : [String(r.finished), "séries finies"]];
   tiles.forEach(([n, l], i) => { const X = 90 + i * 232, Y = 830; x.fillStyle = s1; rr(X, Y, 212, 170, 28); x.fill(); x.fillStyle = tx; x.font = F(800, 64); x.fillText(fit(n, 180), X + 24, Y + 92); x.fillStyle = mu; x.font = F(600, 30); x.fillText(l, X + 24, Y + 140); });
@@ -1110,7 +1146,11 @@ function vGames(v) {
   if (!rawg.getKey()) { patch(v, h + noKey()); return; }
   const all = [...store.data.games.values()];
   if (!G_LABEL[ui.gameFilter]) ui.gameFilter = "playing";
-  const fresh = all.filter(isUnseenRelease).length;
+  const relList = all.filter(isUnseenRelease).sort((a, b) => a.released < b.released ? 1 : -1);
+  const fresh = relList.length;
+  // La pastille rouge (onglet Jeux, « À jouer ») = ces jeux attendus qui viennent de sortir : on les nomme ici
+  h += relList.slice(0, 3).map(g => `<div class="banner gbanner">${I.pad}<div><b>${esc(g.name)}</b> est sorti ${esc(rel(g.released))}<br><small>Jeu attendu de ta liste « À jouer »</small></div><button class="btn sm pri" data-a="game" data-id="${g.id}">Voir</button><button class="x" data-a="gseen" data-id="${g.id}" aria-label="J'ai vu">${I.x}</button></div>`).join("")
+    + (fresh > 3 ? `<button class="linkbtn" data-a="gseenAll" style="margin:0 0 8px">Marquer les ${fresh} sorties comme vues</button>` : "");
   h += `<div class="chips">${G_F.map(([k, l]) => `<button class="chip ${ui.gameFilter === k ? "on" : ""}" data-a="gfilter" data-v="${k}">${l}${k === "backlog" && fresh ? `<i class="dot">${fresh}</i>` : ""}</button>`).join("")}</div>`;
   const list = (ui.gameFilter === "all" ? all : all.filter(g => gst(g) === ui.gameFilter)).sort((a, b) => (b.lastAt || b.addedAt || 0) - (a.lastAt || a.addedAt || 0));
   if (!all.length) { patch(v, h + `<div class="empty">${I.pad}<h3>Ludothèque vide</h3><p>Ajoute tes jeux depuis Découvrir.</p><div class="btns"><button class="btn pri" data-a="tab" data-v="gdiscover">${I.search}Découvrir</button></div></div>`); return; }
@@ -1126,13 +1166,33 @@ function vGames(v) {
 
 const GOTY = [["Clair Obscur: Expedition 33", 2025], ["Astro Bot", 2024], ["Baldur's Gate 3", 2023], ["Elden Ring", 2022], ["It Takes Two", 2021], ["The Last of Us Part II", 2020],
   ["Sekiro: Shadows Die Twice", 2019], ["God of War", 2018], ["The Legend of Zelda: Breath of the Wild", 2017], ["Overwatch", 2016], ["The Witcher 3: Wild Hunt", 2015], ["Dragon Age: Inquisition", 2014]];
+// Genres préférés d'après la ludothèque (note ≥ 4 et jeux terminés/en cours comptent plus, abandonnés ignorés)
+function myGenres() {
+  const w = new Map();
+  for (const g of store.data.games.values()) {
+    const st = gst(g), k = st === "abandoned" ? 0 : (g.rating || 0) >= 4 ? 3 : st === "beaten" || st === "playing" ? 2 : 1;
+    if (k) for (const n of g.genres || []) { const name = n?.name || n; if (name && name !== "Indie") w.set(name, (w.get(name) || 0) + k); }
+  }
+  return [...w.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2).map(x => x[0]);
+}
+const gslug = n => n.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[()]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+const GENRE_FR = { "Action": "Action", "Adventure": "Aventure", "Role Playing Games (RPG)": "RPG", "Shooter": "Tir", "Strategy": "Stratégie", "Simulation": "Simulation", "Puzzle": "Réflexion", "Platformer": "Plateformes", "Racing": "Course", "Sports": "Sport", "Fighting": "Combat", "Massively Multiplayer": "MMO", "Arcade": "Arcade", "Casual": "Casual", "Family": "Famille", "Board Games": "Jeux de société", "Card": "Cartes", "Educational": "Éducatif" };
+async function forYou() {
+  const gs = myGenres(); if (!gs.length) return [];
+  const lists = await Promise.all(gs.map(n => rawg.list({ genres: gslug(n), metacritic: "80,100", ordering: "-added" }, 72).catch(() => [])));
+  const out = [], seen = new Set();
+  for (let i = 0; i < 30; i++) for (const l of lists) { const g = l[i]; if (g && !seen.has(g.id)) { seen.add(g.id); out.push(g); } }
+  return out;
+}
 function gSugDefs() {
   const y = new Date().getFullYear(), td = isoToday();
+  const mine = myGenres();
   return [
+    ...(mine.length ? [["foryou", "Qui pourrait te plaire", "D'après tes jeux : " + mine.map(n => GENRE_FR[n] || n).join(", ")]] : []),
+    ["played", "Les plus joués", "Les jeux présents dans le plus de ludothèques", { ordering: "-added" }],
+    ["rated", "Les mieux notés", "Les meilleures notes de la presse (Metacritic)", { metacritic: "90,100", ordering: "-metacritic" }],
     ["goty", "Jeux de l'année", "Lauréats des Game Awards"],
-    ["mc", "Chefs-d'œuvre", "Les mieux notés par la presse", { metacritic: "92,100", ordering: "-metacritic" }],
     ["recent", "Incontournables récents", "Les meilleurs de ces deux dernières années", { dates: `${y - 2}-01-01,${td}`, metacritic: "82,100", ordering: "-metacritic" }],
-    ["cult", "Cultes", "Les plus joués de tous les temps", { ordering: "-added" }],
     ["indie", "Pépites indé", "Petits studios, grands jeux", { genres: "indie", metacritic: "84,100", ordering: "-metacritic" }],
     ["retro", "Rétro à avoir joué", "Les classiques d'avant 2006", { dates: "1985-01-01,2005-12-31", metacritic: "90,100", ordering: "-metacritic" }]
   ];
@@ -1144,6 +1204,7 @@ async function loadGSug() {
     try {
       ui.gsug[k] = k === "goty"
         ? (await Promise.all(GOTY.map(async ([n, y]) => { const g = await rawg.searchOne(n).catch(() => null); return g ? { ...g, prize: "GOTY " + y } : null; }))).filter(Boolean)
+        : k === "foryou" ? await forYou()
         : await rawg.list(params, 72);
       ui.gsug[k].forEach(g => gameLite.set(g.id, g));
     } catch (e) { gameErr(e); ui.gsug[k] = []; }
@@ -1193,15 +1254,16 @@ function vGExplore(v, force) {
   if (!force && $("#gq")) { renderGResults(); return; }
   let h = top("Découvrir", "", profileBtn);
   if (!rawg.getKey()) { v.innerHTML = h + noKey(); return; }
+  const sig = myGenres().join("|"); if (ui.fySig !== sig) { ui.fySig = sig; delete ui.gsug.foryou; }
   loadGSug();
-  v.innerHTML = h + `<label class="search">${I.search}<input id="gq" type="search" placeholder="Rechercher un jeu…" autocomplete="off" autocapitalize="off" enterkeyhint="search" value="${esc(ui.gq)}"></label><div id="gresults"></div>`;
+  v.innerHTML = h + searchRow("gq", "Rechercher un jeu…", ui.gq) + `<div id="gresults"></div>`;
   $("#gq").addEventListener("input", e => { ui.gq = e.target.value; clearTimeout(gSearchT); gSearchT = setTimeout(doGSearch, 350); });
   $("#gq").addEventListener("keydown", e => { if (e.key === "Enter") { e.target.blur(); clearTimeout(gSearchT); doGSearch(); } });
   if (ui.gq && !ui.gres) doGSearch(); else renderGResults();
   if (!ui.gdisc) {
     ui.gdisc = {}; const td = isoToday(); const from = new Date(Date.now() - 120 * DAY).toISOString().slice(0, 10);
-    Promise.all([rawg.list({ dates: `${from},${td}`, ordering: "-added" }, 12), rawg.list({ ordering: "-rating", metacritic: "80,100", dates: `${new Date().getFullYear() - 1}-01-01,${td}` }, 24)])
-      .then(([a, b]) => { ui.gdisc = { trend: a, top: b }; [...a, ...b].forEach(g => gameLite.set(g.id, g)); renderGResults(); }).catch(gameErr);
+    rawg.list({ dates: `${from},${td}`, ordering: "-added" }, 12)
+      .then(a => { ui.gdisc = { trend: a }; a.forEach(g => gameLite.set(g.id, g)); renderGResults(); }).catch(gameErr);
   }
 }
 async function doGSearch() {
@@ -1222,16 +1284,18 @@ function renderGResults() {
     return;
   }
   const d = ui.gdisc || {};
-  let sug = "";
-  for (const [k, title, sub] of gSugDefs()) {
+  const block = ([k, title, sub]) => {
     const data = ui.gsug[k];
-    sug += sec(title) + `<div class="sugsub">${esc(sub)}</div>`;
-    if (!data) { sug += skRow(); continue; }
+    let h = sec(title) + `<div class="sugsub">${esc(sub)}</div>`;
+    if (!data) return h + skRow();
     const items = data.filter(g => !store.data.games.has(g.id) && g.background_image).slice(0, 20);
-    sug += items.length ? gRow(items) : `<div class="sugsub">Tu les as déjà tous 👏</div>`;
-  }
-  r.innerHTML = (!d.trend ? sec("Tendances") + skRow() : sec("Tendances") + gRow(d.trend.filter(g => g.background_image))) + sug
-    + (d.top ? sec("Les mieux notés récemment") + gRow(d.top.filter(g => g.background_image)) : "");
+    return h + (items.length ? gRow(items) : `<div class="sugsub">Tu les as déjà tous 👏</div>`);
+  };
+  const defs = gSugDefs(), fy = defs.find(x => x[0] === "foryou");
+  const trend = sec("Tendances") + `<div class="sugsub">Les sorties des 4 derniers mois les plus ajoutées</div>` + (!d.trend ? skRow() : gRow(d.trend.filter(g => g.background_image)));
+  // Ordre : pour toi → plus joués → mieux notés → tendances → le reste
+  r.innerHTML = (fy ? block(fy) : "") + defs.filter(x => x[0] === "played" || x[0] === "rated").map(block).join("") + trend
+    + defs.filter(x => !["foryou", "played", "rated"].includes(x[0])).map(block).join("");
 }
 
 function openGame(id) {
@@ -1254,6 +1318,7 @@ function gameSheet(id, sh) {
     <div class="btns">${g ? `<button class="btn pri" data-a="gstatus" data-id="${id}">${G_ICON[gst(g)] || ""}${esc(G_LABEL[gst(g)] || "Statut")} ▾</button>`
       : future ? `<button class="btn pri" data-a="gadd" data-v="backlog" data-id="${id}">${I.plus}À jouer à sa sortie</button>`
       : `<button class="btn pri" data-a="gadd" data-v="backlog" data-id="${id}">${I.plus}À jouer</button><button class="btn" data-a="gadd" data-v="playing" data-id="${id}">${I.play}J'y joue</button><button class="btn" data-a="gstatus" data-id="${id}">${I.more}</button>`}</div>
+    ${g ? `<label class="hours" for="gh-${id}">${I.clock}<span>Heures de jeu <small>${gst(g) === "beaten" ? "(pour tes stats)" : "(optionnel)"}</small></span><input id="gh-${id}" type="text" inputmode="decimal" autocomplete="off" maxlength="6" placeholder="${d.playtime ? "~" + d.playtime : "0"}" value="${g.hours != null ? String(g.hours).replace(".", ",") : ""}" data-hours="${id}"><b>h</b></label>` : ""}
     ${g ? `<div style="color:var(--mu);font-size:13px">Ta note :</div><div class="stars">${[1, 2, 3, 4, 5].map(n => `<button data-a="grate" data-id="${id}" data-v="${n}" class="${(g.rating || 0) >= n ? "on" : ""}" aria-label="${n} étoiles">${I.star}</button>`).join("")}</div>` : ""}
     ${plats.length ? `<div style="color:var(--mu);font-size:13px;margin-top:8px">${g ? "Tu y joues sur :" : "Plateformes"}</div><div class="gen">${plats.map(p => g ? `<button class="pchip ${g.platform === p ? "on" : ""}" data-a="gplat" data-id="${id}" data-v="${esc(p)}">${esc(p)}</button>` : `<span>${esc(p)}</span>`).join("")}</div>` : ""}
     ${d.genres?.length ? `<div class="gen">${d.genres.map(x => `<span>${esc(x)}</span>`).join("")}</div>` : ""}
@@ -1309,6 +1374,15 @@ function themeCard() {
     <label class="colrow"><span>Couleur d'accent</span><input type="color" data-c="ac" value="${cur.ac}" ${premium.isPremium() ? "" : "disabled"}></label>
     <button class="btn ghost" data-a="themeReset" style="width:100%;margin-top:10px">Thème par défaut</button>`;
 }
+// Heures de jeu (fiche jeu) : enregistrées à la sortie du champ
+document.addEventListener("change", e => {
+  const id = +e.target?.dataset?.hours; if (!id) return;
+  const g = store.data.games.get(id); if (!g) return;
+  const v = parseFloat(String(e.target.value).replace(",", ".").replace(/[^0-9.]/g, ""));
+  const hours = isFinite(v) && v > 0 ? Math.min(10000, Math.round(v * 2) / 2) : null;
+  if ((g.hours ?? null) === hours) return;
+  store.saveGame({ ...g, hours }).then(() => toast(hours ? `${String(hours).replace(".", ",")} h de jeu enregistrées` : "Heures de jeu effacées")).catch(e => onErr(e));
+});
 const memoT = {};
 document.addEventListener("input", e => {
   const mk = e.target?.dataset?.memo;
@@ -1545,6 +1619,15 @@ const A = {
   tv: el => openTv(+el.dataset.id),
   mv: el => openMovie(+el.dataset.id),
   ep: el => openEpisode(+el.dataset.id, +el.dataset.s, +el.dataset.e),
+  qcancel(el) {
+    const id = el.dataset.v, inp = $("#" + id);
+    if (id === "gq") { ui.gq = ""; ui.gres = null; clearTimeout(gSearchT); gSeq++; renderGResults(); }
+    else { ui.q = ""; ui.results = null; clearTimeout(searchT); searchSeq++; renderResults(); }
+    if (inp) { inp.value = ""; inp.blur(); }
+    el.closest(".srow")?.classList.remove("on"); window.scrollTo(0, 0);
+  },
+  gseen(el) { const g = store.data.games.get(+el.dataset.id); if (g) store.saveGame({ ...g, seenRelease: g.released }); },
+  async gseenAll() { for (const g of [...store.data.games.values()].filter(isUnseenRelease)) await store.saveGame({ ...g, seenRelease: g.released }); },
   reveal: () => { const sh = sheets.at(-1); if (sh) { sh.state.reveal = true; sh.refresh(); } },
   errLog: () => openErrLog(),
   async errClear() { const sh = sheets.at(-1); const ids = (sh?.state.list || []).map(r => r.id); if (!ids.length) return; await store.deleteErrors(ids); sh.state.list = []; sh.refresh(); toast("Journal vidé"); },
@@ -1736,6 +1819,15 @@ const A = {
     await store.wipeAll(); toast("Données effacées");
   }
 };
+
+// Clavier ouvert (iPhone) : la barre d'onglets fixée en bas « remonte » au-dessus du clavier quand on fait défiler
+// → on la cache pendant la saisie. Faire défiler les résultats de recherche ferme le clavier.
+const isTyping = el => !!el && (el.tagName === "TEXTAREA" || (el.tagName === "INPUT" && !["checkbox", "radio", "color", "file", "range", "button", "submit"].includes(el.type)));
+const syncSrow = () => document.querySelectorAll(".srow").forEach(r => { const i = r.querySelector("input"); r.classList.toggle("on", !!i && (document.activeElement === i || !!i.value)); });
+document.addEventListener("focusin", e => { if (isTyping(e.target)) document.body.classList.add("kb"); syncSrow(); });
+document.addEventListener("focusout", () => setTimeout(() => { if (!isTyping(document.activeElement)) document.body.classList.remove("kb"); syncSrow(); }, 180));
+document.addEventListener("input", e => { if (e.target.closest?.(".srow")) syncSrow(); });
+document.addEventListener("touchmove", () => { const a = document.activeElement; if (a && (a.id === "q" || a.id === "gq")) a.blur(); }, { passive: true });
 
 // Geste de l'utilisateur : pendant 2 s, les mises à jour s'affichent tout de suite (il attend une réaction)
 ["click", "input", "change", "keydown"].forEach(t => document.addEventListener(t, () => { tapAt = performance.now(); }, true));
