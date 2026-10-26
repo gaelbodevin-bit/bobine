@@ -79,6 +79,35 @@ const pimg = (path, alt, size = "w342") => path
 
 // ═════════════ État UI + caches de détails ═════════════
 const ui = { tab: "series", seriesFilter: "watching", sugSeg: "movie", sug: {}, movieSeg: "watchlist", seriesView: (() => { try { return localStorage.getItem("bobine:sview") || "grid"; } catch { return "grid"; } })(), q: "", pushStatus: null, mode: null };
+ui.nospoil = (() => { try { return localStorage.getItem("bobine:nospoil") === "1"; } catch { return false; } })();
+const APP_V = "v30";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
+const ADMINS = ["gael.bodevin@gmail.com", "bluecellproduction@gmail.com", "fast.and.spermious@gmail.com"];
+const isAdmin = () => ADMINS.includes((store.data.user?.email || "").toLowerCase());
+
+// ═════════════ Journal des plantages ═════════════
+// Toute erreur inattendue part dans Firestore (message, pile, appareil, version, compte) ; consultable dans Paramètres (admin).
+// Les simples coupures réseau ne sont pas journalisées (trop de bruit, rien à corriger).
+const errSeen = new Set();
+const NET_ERR = /^(TypeError: )?(Failed to fetch|Load failed|NetworkError when attempting to fetch resource\.?|The network connection was lost\.?)$|AbortError|aborted|ResizeObserver loop|^Script error\.?$|^TMDB \d{3}|NO_KEY|BAD_KEY|auth\/network-request-failed|unavailable/i;
+function logError(e, where) {
+  try {
+    const msg = String(e?.message || e || "").slice(0, 500);
+    if (!msg || NET_ERR.test(msg)) return;
+    const k = where + "|" + msg; if (errSeen.has(k) || errSeen.size > 12) return; errSeen.add(k);
+    store.logError({ msg, stack: String(e?.stack || "").slice(0, 1800), where: String(where || "").slice(0, 60), tab: String(ui.tab || ""), mode: String(ui.mode || ""),
+      v: APP_V, ua: navigator.userAgent.slice(0, 300), standalone: !!push.isStandalone(), online: navigator.onLine, at: Date.now(), url: location.hash.slice(0, 80) });
+  } catch { }
+}
+
+// ═════════════ Mode sans spoiler ═════════════
+// Épisode pas encore vu → pas de titre, image floutée, résumé masqué (affichable à la demande dans sa fiche)
+const hideEp = (show, s, e) => ui.nospoil && !isWatched(show, s, e);
+function setNoSpoil(v, fromServer) {
+  ui.nospoil = !!v; try { localStorage.setItem("bobine:nospoil", v ? "1" : "0"); } catch { }
+  if (!fromServer) { store.setUserDoc({ nospoil: !!v }).catch(() => { }); toast(v ? "Mode sans spoiler activé" : "Mode sans spoiler désactivé"); }
+  later();
+}
+
 const details = new Map();   // tv id -> détail allégé
 const seasons = new Map();   // "id:n" -> saison
 const movieD = new Map();    // movie id -> détail
@@ -212,7 +241,7 @@ const epOf = (id, s, e) => needSeason(id, s)?.episodes?.find(x => x.episode_numb
 
 let errShown = 0;
 function onErr(e) {
-  console.warn(e);
+  console.warn(e); logError(e, "onErr");
   if (Date.now() - errShown < 8000) return; errShown = Date.now();
   if (e.message === "BAD_KEY") toast("Clé TMDB refusée — vérifie-la dans Profil → Paramètres");
   else if (e.message === "NO_KEY") renderKey();
@@ -358,12 +387,12 @@ function upCard(x) {
   const name = esc(t?.name || s.name);
   if (!p) return `<div class="up"><div class="th sk"></div><div class="tx"><div class="n">${name}</div><div class="m">Chargement…</div></div></div>`;
   const n = p.next;
-  const still = ep?.still_path ? img(ep.still_path, "w300") : img(t.backdrop_path || s.backdrop_path, "w300");
+  const still = ep?.still_path && !ui.nospoil ? img(ep.still_path, "w300") : img(t.backdrop_path || s.backdrop_path, "w300");
   const la = x.la;
   const meta = p.watched === 0 ? `Pas commencée · ${plural(p.aired, "épisode")}` : "" + (p.remaining > 1 ? `${fresh ? " · " : ""}+${p.remaining - 1} ensuite` : (fresh ? "" : "Dernier épisode dispo"));
   return `<div class="up ${fresh ? "fresh" : ""}" data-a="ep" data-id="${s.id}" data-s="${n.s}" data-e="${n.e}">
     <div class="th">${still ? `<img src="${still}" alt="" loading="lazy">` : ""}${fresh ? `<span class="new">NOUVEL ÉP.</span>` : ""}</div>
-    <div class="tx"><div class="n">${name}</div><div class="e">${SE(n.s, n.e)}${ep?.name ? " · " + esc(ep.name) : ""}</div><div class="m">${meta}</div>
+    <div class="tx"><div class="n">${name}</div><div class="e">${SE(n.s, n.e)}${ep?.name && !ui.nospoil ? " · " + esc(ep.name) : ""}</div><div class="m">${meta}</div>
     <div class="prow"><div class="bar"><i style="width:${p.aired ? Math.round(p.watched / p.aired * 100) : 0}%"></i></div><small>${p.watched}/${p.aired} ép. · ${plural(nSeasons(t), "saison")}</small></div></div>
     <button class="chk" data-a="watchNext" data-id="${s.id}" data-s="${n.s}" data-e="${n.e}" aria-label="Marquer comme vu">${I.check}</button>
   </div>`;
@@ -379,6 +408,9 @@ function poster(s, t, sub, done) {
 
 function banners() {
   let h = "";
+  const ry = recapYear(), mo = new Date().getMonth();
+  if ((mo === 11 || (mo === 0 && new Date().getDate() <= 15)) && !localStorage.getItem("bobine:norecap" + ry) && store.data.shows.size + store.data.movies.size >= 3)
+    h += `<div class="banner recapb">${I.spark}<div><b>Ta rétro ${ry} est prête</b><br>Ton année en séries, films et jeux.</div><button class="btn sm pri" data-a="recap" data-v="${ry}">Voir</button><button class="x" data-a="dismiss" data-v="norecap${ry}">${I.x}</button></div>`;
   if (push.isIOS && !push.isStandalone() && !localStorage.getItem("bobine:noinstall"))
     h += `<div class="banner">${I.share}<div><b>Installe Playwatch</b><br>Partager → « Sur l'écran d'accueil » pour l'app plein écran et les notifications.</div><button class="x" data-a="dismiss" data-v="noinstall">${I.x}</button></div>`;
   else if (ui.pushStatus === "off" && !localStorage.getItem("bobine:nopush"))
@@ -438,7 +470,7 @@ function calRow(x, past) {
   const w = isWatched(x.s, x.e.season_number, x.e.episode_number);
   return `<button class="cal" data-a="ep" data-id="${x.s.id}" data-s="${x.e.season_number}" data-e="${x.e.episode_number}"><div class="ps">${pimg(x.t.poster_path, x.t.name, "w154")}</div>
     <div class="tx" style="flex:1;min-width:0"><div class="n" style="font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(x.t.name)}</div>
-    <div style="color:var(--mu);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${SE(x.e.season_number, x.e.episode_number)}${x.e.name && !/^Épisode \d+$/.test(x.e.name) ? " · " + esc(x.e.name) : ""}${past ? " · " + rel(x.date) : ""}</div>
+    <div style="color:var(--mu);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${SE(x.e.season_number, x.e.episode_number)}${x.e.name && !/^Épisode \d+$/.test(x.e.name) && !hideEp(x.s, x.e.season_number, x.e.episode_number) ? " · " + esc(x.e.name) : ""}${past ? " · " + rel(x.date) : ""}</div>
     ${x.t.networks?.[0] ? `<div style="color:var(--mu2);font-size:12px">${esc(x.t.networks[0])}</div>` : ""}</div>
     ${past ? `<span class="chk ${w ? "on" : ""}" style="width:34px;height:34px" data-a="toggleEp" data-id="${x.s.id}" data-s="${x.e.season_number}" data-e="${x.e.episode_number}">${I.check}</span>` : ""}</button>`;
 }
@@ -669,6 +701,7 @@ function vProfile(v, force) {
   const u = store.data.user;
   v.innerHTML = top("Profil", u?.email ? esc(u.email) : "Mode local (sans compte)", `<div style="display:flex;gap:8px"><button class="iconbtn" data-a="tab" data-v="settings" aria-label="Paramètres">${I.gear}</button><button class="iconbtn" data-a="tab" data-v="${ui.lastTab[ui.domain]}" aria-label="Fermer">${I.x}</button></div>`) + `
   ${premiumCard()}
+  ${recapCard()}
   <div class="stats" id="pstats">${profStats()}</div>
   ${premium.isPremium() ? `<div class="card" id="advstats">${advStats()}</div>` : lockedCard("Statistiques avancées", "Récap de l'année, temps passé, genres et chaînes préférés, décennies, notes moyennes, top séries, plateformes de jeux.")}
   <button class="card setlink" data-a="tab" data-v="settings">${I.gear}<div><b>Paramètres</b><span>Notifications, thème, contenus, import / sauvegarde, clés TMDB et RAWG, compte</span></div>${I.chev}</button>
@@ -684,6 +717,8 @@ function vSettings(v, force) {
   <div class="card"><h3>Contenus affichés</h3><p>Décoche ce que tu ne suis pas : le sélecteur du haut disparaît s'il ne reste qu'un univers.</p>
     <label class="colrow"><span>${I.film.replace("<svg", '<svg style="width:18px;height:18px;vertical-align:-4px;margin-right:8px"')}Films & séries</span><input type="checkbox" class="tgl" data-dom="av" ${ui.domains.av ? "checked" : ""}></label>
     <label class="colrow"><span>${I.pad.replace("<svg", '<svg style="width:18px;height:18px;vertical-align:-4px;margin-right:8px"')}Jeux vidéo</span><input type="checkbox" class="tgl" data-dom="games" ${ui.domains.games ? "checked" : ""}></label></div>
+  <div class="card"><label class="colrow" style="border:0;padding:0;gap:14px"><span><b style="display:block;font-size:16px;margin-bottom:3px">${I.eye.replace("<svg", '<svg style="width:18px;height:18px;vertical-align:-3px;margin-right:6px;color:var(--ac)"')}Mode sans spoiler</b><small style="color:var(--mu);font-size:14px">Masque le titre, l'image et le résumé des épisodes que tu n'as pas encore vus : listes, fiches, À venir, notifications et calendrier.</small></span><input type="checkbox" class="tgl" id="nospoil" ${ui.nospoil ? "checked" : ""}></label></div>
+  ${calCard()}
   <div class="card">${themeCard()}</div>
   <div class="card"><h3>Importer mon historique${premium.isPremium() ? "" : lockTag()}</h3><p>Export <b>Binge Boxd</b> (le .zip, ou sélectionne tous les .csv du dossier), export RGPD <b>TV Time</b>, ou sauvegarde Playwatch (.json).</p>
     <input type="file" id="impfile" accept=".zip,.csv,.json,application/zip,text/csv,application/json" multiple hidden>
@@ -703,9 +738,12 @@ function vSettings(v, force) {
   <div class="btns">${u && !u.local ? `<button class="btn ghost" data-a="logout">Se déconnecter</button>` : ""}<button class="btn ghost danger" data-a="wipe">Tout effacer</button></div>
   ${u && !u.local ? `<div class="card"><h3>Supprimer mon compte</h3><p>Supprime définitivement ton compte et toutes tes données (séries, films, jeux, notifications). Pense à exporter une sauvegarde avant.</p>
     <div id="delzone"><button class="btn ghost danger" data-a="delAccount" style="width:100%">${I.trash}Supprimer mon compte</button></div></div>` : ""}
+  ${isAdmin() ? `<button class="card setlink" data-a="errLog">${I.spark}<div><b>Journal des plantages</b><span>Administrateur : erreurs remontées par les appareils des utilisateurs</span></div>${I.chev}</button>` : ""}
   <div class="foot"><a href="privacy.html" target="_blank" rel="noopener">Politique de confidentialité</a> · <a href="delete-account.html" target="_blank" rel="noopener">Suppression des données</a><br>Ce produit utilise l'API <a href="https://www.themoviedb.org" target="_blank" rel="noopener">TMDB</a> mais n'est ni approuvé ni certifié par TMDB. Jeux : <a href="https://rawg.io" target="_blank" rel="noopener">RAWG</a>.</div>
 `;
   $("#impfile").addEventListener("change", e => runImport([...e.target.files]));
+  $("#nospoil").addEventListener("change", e => setNoSpoil(e.target.checked));
+  if (ui.userDoc === undefined && u && !u.local) store.getUserDoc().then(d => { ui.userDoc = d; refreshCalCard(); }).catch(() => { ui.userDoc = {}; refreshCalCard(); });
   v.querySelectorAll("input[data-dom]").forEach(cb => cb.addEventListener("change", () => {
     const d = { ...ui.domains, [cb.dataset.dom]: cb.checked };
     if (!d.av && !d.games) { cb.checked = true; return toast("Garde au moins un des deux"); }
@@ -765,7 +803,9 @@ const PERKS = [
   ["push", I.bell, "Notifications", "Nouvel épisode, sortie ciné/VOD d'un film de ta liste, sortie d'un jeu attendu."],
   ["stats", I.spark, "Statistiques avancées", "Récap de l'année, temps passé, genres, chaînes, décennies, notes, top séries."],
   ["theme", I.star, "Thèmes & couleurs", "7 thèmes et réglage libre du fond, des bandeaux et de l'accent."],
-  ["import", I.up, "Import d'historique", "Reprends tout depuis TV Time, Binge Boxd ou une sauvegarde."]
+  ["import", I.up, "Import d'historique", "Reprends tout depuis TV Time, Binge Boxd ou une sauvegarde."],
+  ["calendar", I.cal, "Calendrier abonnable", "Les sorties de tes séries, films et jeux dans le calendrier de ton iPhone ou Google Agenda."],
+  ["recap", I.spark, "Ta rétro de l'année", "Ton année en séries, films et jeux, en image à partager."]
 ];
 function openPaywall(why) {
   if (store.data.user?.local) return toast("Premium nécessite un compte");
@@ -821,6 +861,188 @@ function advStats() {
     h += block("Genres de jeux", gg.length ? bars(gg) : "");
   }
   return h;
+}
+
+// ═════════════ Journal des plantages (administrateur) ═════════════
+function device(ua = "") {
+  const ios = ua.match(/(?:iPhone|CPU) OS (\d+)[._](\d+)/);
+  if (ios) return (/iPad/.test(ua) ? "iPad" : "iPhone") + " iOS " + ios[1] + "." + ios[2];
+  const an = ua.match(/Android (\d+(?:\.\d+)?)/); if (an) return "Android " + an[1] + (/; wv\)/.test(ua) ? " (app)" : "");
+  const br = /Edg\//.test(ua) ? " Edge" : /Firefox\//.test(ua) ? " Firefox" : / Chrome\//.test(ua) ? " Chrome" : / Safari\//.test(ua) ? " Safari" : "";
+  if (/Windows/.test(ua)) return "Windows" + br;
+  if (/Mac OS X/.test(ua)) return "Mac" + br;
+  return (/Linux/.test(ua) ? "Linux" : "?") + br;
+}
+function openErrLog() {
+  const sh = openSheet(sh => {
+    const L = sh.state.list;
+    let h = `<div class="body"><h2 style="margin:8px 0 4px">Journal des plantages</h2><p style="color:var(--mu);font-size:13px;margin:0 0 14px">Les 60 dernières erreurs, tous appareils et comptes confondus. Touche une ligne pour voir le détail technique.</p>`;
+    if (sh.state.err) return h + `<div class="info">${I.lock}<div>${esc(sh.state.err)}</div></div></div>`;
+    if (!L) return h + `<div class="sk" style="height:140px;border-radius:12px"></div></div>`;
+    if (!L.length) return h + `<div class="empty" style="padding:30px 10px">${I.check}<h3>Aucune erreur</h3><p>Rien à signaler pour l'instant.</p></div></div>`;
+    h += `<button class="btn ghost danger" data-a="errClear" style="width:100%;margin-bottom:12px">${I.trash}Vider le journal (${L.length})</button>`;
+    for (const r of L) {
+      const when = r.ts?.toDate ? r.ts.toDate() : new Date(r.at || 0);
+      h += `<details class="errrow"><summary><b>${esc(r.msg || "?")}</b><small>${esc(when.toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" }))} · ${esc(r.v || "?")} · ${esc(device(r.ua))}${r.standalone ? " · app" : ""}${r.online === false ? " · hors ligne" : ""}<br>${esc(r.email || "non connecté")} · ${esc(r.where || "")}${r.tab ? " · onglet " + esc(r.tab) : ""}</small></summary><pre>${esc(r.stack || "(pas de pile)")}\n\n${esc(r.ua || "")}</pre></details>`;
+    }
+    return h + `</div>`;
+  });
+  store.listErrors(60).then(l => { sh.state.list = l; sh.refresh(); })
+    .catch(e => { sh.state.err = e.code === "permission-denied" ? "Accès refusé : connecte-toi avec un compte administrateur (Google ou e-mail vérifié)." : (e.message || String(e)); sh.refresh(); });
+}
+
+// ═════════════ Calendrier abonnable (Premium) ═════════════
+const CAL_BASE = "https://europe-west1-bobine-4d524.cloudfunctions.net/calendar";
+const newToken = () => { const b = crypto.getRandomValues(new Uint8Array(18)); return btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); };
+function calUrl(tk) {
+  const https = `${CAL_BASE}/${tk}.ics`, webcal = https.replace(/^https:/, "webcal:");
+  return { https, webcal, google: "https://calendar.google.com/calendar/render?cid=" + encodeURIComponent(webcal) };
+}
+function calCard() {
+  const u = store.data.user;
+  if (!u || u.local) return "";
+  if (!premium.isPremium()) return `<div class="card locked" data-a="paywall" data-v="calendar"><h3>${I.cal}Calendrier${lockTag()}</h3><p>Les sorties de tes séries, films et jeux directement dans le calendrier de ton iPhone ou dans Google Agenda, mis à jour tout seul.</p><button class="btn pri" style="width:100%">${I.lock}Débloquer avec Premium</button></div>`;
+  if (ui.userDoc === undefined) return `<div class="card" id="calcard"><h3>${I.cal}Calendrier</h3><div class="sk" style="height:46px;border-radius:12px"></div></div>`;
+  const tk = ui.userDoc?.calToken;
+  if (!tk) return `<div class="card" id="calcard"><h3>${I.cal}Calendrier</h3><p>Abonne ton calendrier (iPhone, Mac, Google Agenda, Outlook…) aux sorties de tes séries, des films de ta liste et des jeux attendus. Il se met à jour tout seul.</p><button class="btn pri" data-a="calOn" style="width:100%">${I.cal}Créer mon calendrier</button></div>`;
+  const l = calUrl(tk);
+  return `<div class="card" id="calcard"><h3>${I.cal}Calendrier</h3><p>Ajoute-le une seule fois : les nouvelles dates arrivent toutes seules (épisodes 30 jours en arrière et 4 mois en avant).</p>
+    <a class="btn pri" href="${l.webcal}" style="width:100%">${I.cal}Ajouter au calendrier iPhone / Mac</a>
+    <a class="btn" href="${l.google}" target="_blank" rel="noopener" style="width:100%;margin-top:8px">Ajouter à Google Agenda</a>
+    <button class="btn ghost" data-a="calCopy" style="width:100%;margin-top:8px">Copier le lien (Outlook, autres)</button>
+    <button class="linkbtn" data-a="calReset">Créer un nouveau lien (l'ancien cessera de fonctionner)</button></div>`;
+}
+function refreshCalCard() { const c = $("#calcard"); if (c) c.outerHTML = calCard(); }
+
+// ═════════════ Rétrospective de l'année (Premium) ═════════════
+// Début janvier on montre encore l'année écoulée
+const recapYear = () => { const d = new Date(); return d.getMonth() === 0 && d.getDate() <= 15 ? d.getFullYear() - 1 : d.getFullYear(); };
+function recapCard() {
+  const Y = recapYear();
+  if (!premium.isPremium()) return `<button class="card setlink recapc locked" data-a="paywall" data-v="recap">${I.spark}<div><b>Ta rétro ${Y}${lockTag()}</b><span>Ton année en séries, films et jeux, en image à partager.</span></div>${I.chev}</button>`;
+  return `<button class="card setlink recapc" data-a="recap" data-v="${Y}">${I.spark}<div><b>Ta rétro ${Y}</b><span>Ton année en séries, films et jeux, en image à partager.</span></div>${I.chev}</button>`;
+}
+function computeRecap(Y) {
+  const inY = ts => ts && new Date(ts).getFullYear() === Y;
+  const y0 = Math.floor(Date.UTC(Y, 0, 1) / DAY), y1 = Math.floor(Date.UTC(Y + 1, 0, 1) / DAY);
+  const months = new Array(12).fill(0); let dated = 0;
+  const per = [];
+  for (const s of store.data.shows.values()) {
+    const t = details.get(s.id);
+    const rt = s.runtime || t?.episode_run_time?.[0] || t?.last_episode_to_air?.runtime || 40;
+    // Épisodes sans date de visionnage (avant la rétro, imports) : comptés si leur saison est sortie cette année
+    // et que la série a été regardée cette année — estimation prudente.
+    const sy = new Set((t?.seasons || []).filter(x => x.season_number > 0 && x.air_date && +x.air_date.slice(0, 4) === Y).map(x => x.season_number));
+    let n = 0;
+    for (const k in s.watched || {}) {
+      if (k === "0") continue;
+      for (const e of s.watched[k]) {
+        const d = s.wd?.[k + ":" + e];
+        if (d != null) { if (d >= y0 && d < y1) { n++; months[new Date(d * DAY).getMonth()]++; dated++; } }
+        else if (sy.has(+k) && inY(s.lastWatchedAt)) n++;
+      }
+    }
+    if (n) per.push({ s, t, n, min: n * rt });
+  }
+  per.sort((a, b) => b.n - a.n || b.min - a.min);
+  const mv = [...store.data.movies.values()].filter(m => m.status === "watched" && inY(m.watchedAt)).sort((a, b) => (b.rating || 0) - (a.rating || 0) || b.watchedAt - a.watchedAt);
+  mv.forEach(m => { months[new Date(m.watchedAt).getMonth()]++; dated++; });
+  const games = ui.domains.games ? [...store.data.games.values()].filter(g => inY(g.finishedAt)) : [];
+  const weigh = f => { const m = new Map(); per.forEach(x => (f(x) || []).forEach(k => k && m.set(k, (m.get(k) || 0) + x.n))); return [...m.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || ""; };
+  const smin = per.reduce((n, x) => n + x.min, 0), mmin = mv.reduce((n, m) => n + (m.runtime || movieD.get(m.id)?.runtime || 110), 0);
+  const finished = per.filter(x => x.t && !progress(x.s, x.t).next && ["Ended", "Canceled"].includes(x.t.status)).length;
+  const best = months.indexOf(Math.max(...months));
+  return {
+    Y, per, eps: per.reduce((n, x) => n + x.n, 0), shows: per.length, finished, smin, mmin, hours: Math.round((smin + mmin) / 60),
+    movies: mv, topMovie: mv[0] || null, rated: mv.filter(m => m.rating), games,
+    genre: weigh(x => x.t?.genres), network: weigh(x => x.t?.networks?.slice(0, 1)),
+    month: dated >= 8 && months[best] ? new Date(Y, best, 1).toLocaleDateString("fr-FR", { month: "long" }) : ""
+  };
+}
+function openRecap(Y) {
+  if (!premium.isPremium()) return openPaywall("recap");
+  const sh = openSheet(() => {
+    const r = computeRecap(Y); ui.recap = r;
+    const nf = n => n.toLocaleString("fr-FR");
+    if (!r.eps && !r.movies.length && !r.games.length) return `<div class="body recap"><div class="rc-hero"><small>PLAYWATCH</small><h1>Ta rétro ${Y}</h1></div><div class="empty" style="padding:30px 10px">${I.spark}<h3>Pas encore assez de visionnages</h3><p>Coche tes épisodes et tes films au fil de l'année : ta rétro se construit toute seule.</p></div></div>`;
+    const poster = (p, n) => `<div class="rc-p">${p ? `<img src="${img(p, "w185")}" alt="" loading="lazy">` : `<div class="noimg">${esc(n)}</div>`}</div>`;
+    let h = `<div class="body recap"><div class="rc-hero"><small>PLAYWATCH</small><h1>Ta rétro ${Y}</h1><p>${r.month ? `Ton mois le plus chargé : <b>${esc(r.month)}</b>` : "Ton année en séries, films et jeux"}</p></div>
+      <div class="rc-big"><b>${nf(r.hours)}</b><span>heures devant l'écran</span><small>${nf(Math.round(r.smin / 60))} h de séries · ${nf(Math.round(r.mmin / 60))} h de films</small></div>
+      <div class="rc-grid"><div><b>${nf(r.eps)}</b><span>épisodes</span></div><div><b>${r.shows}</b><span>séries</span></div><div><b>${r.movies.length}</b><span>films</span></div>${ui.domains.games ? `<div><b>${r.games.length}</b><span>jeux finis</span></div>` : `<div><b>${r.finished}</b><span>séries finies</span></div>`}</div>`;
+    if (r.per.length) h += `<h3 class="rc-h">Tes séries de l'année</h3>` + r.per.slice(0, 5).map((x, i) => `<button class="rc-row" data-a="tv" data-id="${x.s.id}"><span class="rc-n">${i + 1}</span>${poster(x.t?.poster_path || x.s.poster_path, x.s.name)}<div><b>${esc(x.t?.name || x.s.name)}</b><small>${plural(x.n, "épisode")} · ${dur(x.min)}</small></div></button>`).join("");
+    if (r.topMovie) { const m = r.topMovie; h += `<h3 class="rc-h">${m.rating ? "Ton film préféré" : "Ton dernier film"}</h3><button class="rc-row" data-a="mv" data-id="${m.id}">${poster(m.poster_path, m.title)}<div><b>${esc(m.title)}</b><small>${m.rating ? "★".repeat(m.rating) + " · " : ""}vu le ${esc(new Date(m.watchedAt).toLocaleDateString("fr-FR", { day: "numeric", month: "long" }))}${r.rated.length ? ` · moyenne ${(r.rated.reduce((n, x) => n + x.rating, 0) / r.rated.length).toFixed(1).replace(".", ",")}★` : ""}</small></div></button>`; }
+    if (r.games.length) h += `<h3 class="rc-h">Jeux terminés</h3><div class="rc-games">${r.games.slice(0, 8).map(g => `<div>${g.background_image ? `<img src="${esc(gimg(g.background_image))}" alt="" loading="lazy">` : ""}<small>${esc(g.name)}</small></div>`).join("")}</div>`;
+    const tags = [r.genre && ["Genre préféré", r.genre], r.network && ["Chaîne / plateforme", r.network], r.finished && ["Séries terminées", r.finished]].filter(Boolean);
+    if (tags.length) h += `<div class="rc-tags">${tags.map(([k, v]) => `<div><small>${k}</small><b>${esc(String(v))}</b></div>`).join("")}</div>`;
+    h += `<button class="btn pri big" data-a="recapShare" style="width:100%;margin-top:20px">${I.share}Partager mon image</button>
+      <p class="rc-note">Les épisodes cochés à partir d'octobre 2026 sont datés précisément ; avant, l'estimation se base sur les saisons sorties cette année. Les rattrapages d'historique en masse ne sont pas comptés.</p></div>`;
+    return h;
+  });
+  return sh;
+}
+// Image 1080×1920 (format story) dessinée sur un canvas, partagée ou téléchargée
+function loadImg(url) {
+  return new Promise(res => {
+    if (!url) return res(null);
+    const i = new Image(); i.crossOrigin = "anonymous"; i.decoding = "async";
+    const to = setTimeout(() => res(null), 5000);
+    i.onload = () => { clearTimeout(to); res(i); }; i.onerror = () => { clearTimeout(to); res(null); };
+    i.src = url;
+  });
+}
+async function drawRecap(r, withImages) {
+  const W = 1080, H = 1920, c = document.createElement("canvas"); c.width = W; c.height = H;
+  const x = c.getContext("2d"), cs = getComputedStyle(document.documentElement);
+  const v = k => cs.getPropertyValue(k).trim();
+  const hex = (k, d) => /^#[0-9a-f]{6}$/i.test(v(k)) ? v(k) : d;   // les dégradés ont besoin d'un #rrggbb
+  const bg = hex("--bg", "#0d0d11"), ac = hex("--ac", "#ffc83d"), tx = v("--tx") || "#ffffff", mu = v("--mu") || "#9a9aa6", s1 = v("--s1") || "#17171d";
+  const F = (w, px) => `${w} ${px}px -apple-system, "SF Pro Display", "Segoe UI", Roboto, system-ui, sans-serif`;
+  let g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, bg); g.addColorStop(1, bg); x.fillStyle = g; x.fillRect(0, 0, W, H);
+  g = x.createRadialGradient(W * .85, 120, 40, W * .85, 120, 900); g.addColorStop(0, ac + "55"); g.addColorStop(1, ac + "00"); x.fillStyle = g; x.fillRect(0, 0, W, H);
+  g = x.createRadialGradient(0, H, 40, 0, H, 900); g.addColorStop(0, ac + "33"); g.addColorStop(1, ac + "00"); x.fillStyle = g; x.fillRect(0, 0, W, H);
+  const rr = (X, Y, w, h, rad) => { x.beginPath(); x.moveTo(X + rad, Y); x.arcTo(X + w, Y, X + w, Y + h, rad); x.arcTo(X + w, Y + h, X, Y + h, rad); x.arcTo(X, Y + h, X, Y, rad); x.arcTo(X, Y, X + w, Y, rad); x.closePath(); };
+  const fit = (t, max) => { let s = String(t); if (x.measureText(s).width <= max) return s; while (s.length > 1 && x.measureText(s + "…").width > max) s = s.slice(0, -1); return s + "…"; };
+  const nf = n => n.toLocaleString("fr-FR");
+  x.textBaseline = "alphabetic"; x.fillStyle = ac; x.font = F(800, 34); x.letterSpacing = "6px"; x.fillText("PLAYWATCH", 90, 150); x.letterSpacing = "0px";
+  x.fillStyle = tx; x.font = F(900, 118); x.fillText("Ta rétro " + r.Y, 84, 285);
+  if (r.month) { x.fillStyle = mu; x.font = F(600, 38); x.fillText("Mois le plus chargé : " + r.month, 90, 350); }
+  // Grand chiffre
+  x.fillStyle = ac; x.font = F(900, 250); x.fillText(nf(r.hours), 80, 620);
+  x.fillStyle = tx; x.font = F(700, 52); x.fillText("heures devant l'écran", 90, 700);
+  x.fillStyle = mu; x.font = F(500, 36); x.fillText(`${nf(Math.round(r.smin / 60))} h de séries · ${nf(Math.round(r.mmin / 60))} h de films`, 90, 760);
+  // Tuiles
+  const tiles = [[nf(r.eps), "épisodes"], [String(r.shows), "séries"], [String(r.movies.length), "films"], ui.domains.games ? [String(r.games.length), "jeux finis"] : [String(r.finished), "séries finies"]];
+  tiles.forEach(([n, l], i) => { const X = 90 + i * 232, Y = 830; x.fillStyle = s1; rr(X, Y, 212, 170, 28); x.fill(); x.fillStyle = tx; x.font = F(800, 64); x.fillText(fit(n, 180), X + 24, Y + 92); x.fillStyle = mu; x.font = F(600, 30); x.fillText(l, X + 24, Y + 140); });
+  // Top 3 séries
+  const top = r.per.slice(0, 3);
+  if (top.length) {
+    x.fillStyle = tx; x.font = F(800, 46); x.fillText("Tes séries de l'année", 90, 1110);
+    const imgs = withImages ? await Promise.all(top.map(t => loadImg(img(t.t?.poster_path || t.s.poster_path, "w342")))) : [];
+    top.forEach((t, i) => {
+      const X = 90 + i * 310, Y = 1150, w = 280, h = 420;
+      x.save(); rr(X, Y, w, h, 26); x.clip(); x.fillStyle = s1; x.fillRect(X, Y, w, h); if (imgs[i]) x.drawImage(imgs[i], X, Y, w, h); x.restore();
+      x.fillStyle = ac; rr(X + 16, Y + 16, 64, 64, 32); x.fill(); x.fillStyle = v("--ac-tx") || "#111"; x.font = F(900, 38); x.textAlign = "center"; x.fillText(String(i + 1), X + 48, Y + 61); x.textAlign = "left";
+      x.fillStyle = tx; x.font = F(700, 32); x.fillText(fit(t.t?.name || t.s.name, w), X, Y + h + 48);
+      x.fillStyle = mu; x.font = F(500, 28); x.fillText(plural(t.n, "épisode"), X, Y + h + 86);
+    });
+  }
+  // Bas de page
+  const tags = [r.genre && "Genre préféré : " + r.genre, r.network && "Plateforme : " + r.network, r.topMovie && "Film : " + r.topMovie.title].filter(Boolean);
+  const tg = tags.slice(0, 2);
+  x.fillStyle = mu; x.font = F(600, 34); tg.forEach((t, i) => x.fillText(fit(t, W - 180), 90, 1760 - (tg.length - 1 - i) * 52));
+  x.fillStyle = tx; x.font = F(700, 30); x.fillText("Suis tes séries, films et jeux avec Playwatch", 90, 1850);
+  return c;
+}
+async function shareRecap() {
+  const r = ui.recap; if (!r) return;
+  toast("Préparation de l'image…");
+  let c = await drawRecap(r, true), blob;
+  try { blob = await new Promise((res, rej) => { try { c.toBlob(b => b ? res(b) : rej(new Error("vide")), "image/png"); } catch (e) { rej(e); } }); }
+  catch { c = await drawRecap(r, false); blob = await new Promise(res => c.toBlob(res, "image/png")); }   // affiche non autorisée par le CDN : image sans affiches
+  const file = new File([blob], `playwatch-retro-${r.Y}.png`, { type: "image/png" });
+  if (navigator.canShare?.({ files: [file] })) { try { await navigator.share({ files: [file], title: `Ma rétro ${r.Y} — Playwatch` }); return; } catch (e) { if (e.name === "AbortError") return; } }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(file); a.download = file.name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+  toast("Image enregistrée");
 }
 
 // ═════════════ Jeux vidéo ═════════════
@@ -1191,9 +1413,10 @@ function tvSheet(id, sh) {
       else for (const e of sea.episodes) {
         const fut = !e.air_date || e.air_date > isoToday();
         const ok = isWatched(s, n, e.episode_number);
+        const hid = ui.nospoil && !ok;
         h += `<div class="ep ${fut ? "future" : ""}" data-a="ep" data-id="${id}" data-s="${n}" data-e="${e.episode_number}">
-          <div class="et">${e.still_path ? `<img src="${img(e.still_path, "w185")}" alt="" loading="lazy">` : ""}</div>
-          <div class="tx"><b>${e.episode_number}. ${esc(e.name || "Épisode " + e.episode_number)}</b><small>${e.air_date ? (fut ? "Diffusion " + rel(e.air_date) : fmtFull(e.air_date)) : "Date inconnue"}${e.runtime ? " · " + e.runtime + " min" : ""}</small></div>
+          <div class="et ${hid ? "nsp" : ""}">${e.still_path ? `<img src="${img(e.still_path, "w185")}" alt="" loading="lazy">` : ""}</div>
+          <div class="tx"><b>${e.episode_number}. ${esc(hid ? "Épisode " + e.episode_number : e.name || "Épisode " + e.episode_number)}</b><small>${e.air_date ? (fut ? "Diffusion " + rel(e.air_date) : fmtFull(e.air_date)) : "Date inconnue"}${e.runtime ? " · " + e.runtime + " min" : ""}</small></div>
           ${fut ? "" : `<button class="chk ${ok ? "on" : ""}" data-a="toggleEp" data-id="${id}" data-s="${n}" data-e="${e.episode_number}" aria-label="Vu">${I.check}</button>`}</div>`;
       }
     }
@@ -1222,15 +1445,16 @@ function epSheet(id, s, e, sh) {
   const ok = isWatched(show, s, e);
   const fut = ep && (!ep.air_date || ep.air_date > isoToday());
   const pic = ep?.still_path || t?.backdrop_path;
-  return `<div class="hero">${pic ? `<img src="${img(pic, "w780")}" alt="">` : ""}</div>
+  const hid = hideEp(show, s, e) && !sh.state.reveal;
+  return `<div class="hero ${hid && ep?.still_path ? "nsp" : ""}">${pic ? `<img src="${img(pic, "w780")}" alt="">` : ""}</div>
   <div class="body" style="margin-top:-60px;position:relative;z-index:2">
     <button data-a="tv" data-id="${id}" style="color:var(--ac);font-weight:700;font-size:14px">${esc(t?.name || show?.name || "")} ›</button>
-    <h1 style="font-size:24px;margin:6px 0 2px;letter-spacing:-.02em">${esc(ep?.name || "Épisode " + e)}</h1>
+    <h1 style="font-size:24px;margin:6px 0 2px;letter-spacing:-.02em">${esc(hid ? "Épisode " + e : ep?.name || "Épisode " + e)}</h1>
     <div class="meta" style="color:var(--mu);font-size:14px">${SE(s, e)}${ep?.air_date ? " · " + esc(fmtFull(ep.air_date)) : ""}${ep?.runtime ? " · " + ep.runtime + " min" : ""}${ep?.vote_average ? ` · <span style="color:var(--ac)">★</span> ${ep.vote_average.toFixed(1)}` : ""}</div>
     ${fut ? `<div class="info">${I.clock}<div>Diffusion ${esc(rel(ep.air_date) || "à venir")}</div></div>` : `
     <div class="btns"><button class="btn ${ok ? "ok" : "pri"}" data-a="toggleEp" data-id="${id}" data-s="${s}" data-e="${e}">${I.check}${ok ? "Vu" : "Marquer comme vu"}</button>
     <button class="btn" data-a="upTo" data-id="${id}" data-s="${s}" data-e="${e}">${I.ff}Vu jusqu'ici</button></div>`}
-    ${ep ? (ep.overview ? `<div class="syn">${esc(ep.overview)}</div>${ep._en ? `<div class="vo">Synopsis en VO (pas de traduction française)</div>` : ""}` : `<div class="syn" style="color:var(--mu)">Pas de synopsis disponible.</div>`) : `<div class="syn sk" style="height:80px;border-radius:8px"></div>`}
+    ${hid && ep ? `<button class="nspbox" data-a="reveal">${I.eye}<span><b>Mode sans spoiler</b>Titre, image et résumé masqués. Toucher pour les afficher.</span></button>` : ep ? (ep.overview ? `<div class="syn">${esc(ep.overview)}</div>${ep._en ? `<div class="vo">Synopsis en VO (pas de traduction française)</div>` : ""}` : `<div class="syn" style="color:var(--mu)">Pas de synopsis disponible.</div>`) : `<div class="syn sk" style="height:80px;border-radius:8px"></div>`}
   </div>`;
 }
 
@@ -1281,12 +1505,18 @@ async function withPrevious(id, s, e) {
 async function setEps(id, list, val) {
   let s = store.data.shows.get(id) || await showFromTmdb(id);
   const w = {}; for (const k in s.watched || {}) w[k] = [...s.watched[k]];
+  // Jour de visionnage (jours depuis 1970) : seulement pour un visionnage réel, pas pour un rattrapage
+  // d'historique en masse (« vu jusqu'ici » sur 3 saisons ne compte pas dans la rétro de cette année)
+  const isNew = x => !(s.watched?.[x.s] || []).includes(x.e);
+  const wd = { ...(s.wd || {}) }, today = Math.floor(Date.now() / DAY), real = !val || list.filter(isNew).length <= 10;
   for (const { s: se, e } of list) {
     const set = new Set(w[se] || []); val ? set.add(e) : set.delete(e);
     if (set.size) w[se] = [...set].sort((a, b) => a - b); else delete w[se];
+    const k = se + ":" + e;
+    if (!val) delete wd[k]; else if (real && !(k in wd) && isNew({ s: se, e })) wd[k] = today;
   }
   const prev = store.data.shows.get(id);
-  await store.saveShow({ ...s, watched: w, status: val && s.status !== "watching" ? "watching" : s.status, statusManual: val ? false : (s.statusManual || false), lastWatchedAt: val ? Date.now() : (s.lastWatchedAt || null) });
+  await store.saveShow({ ...s, watched: w, wd, status: val && s.status !== "watching" ? "watching" : s.status, statusManual: val ? false : (s.statusManual || false), lastWatchedAt: val ? Date.now() : (s.lastWatchedAt || null) });
   return prev;
 }
 async function setMovie(id, status) {
@@ -1304,6 +1534,14 @@ const A = {
   tv: el => openTv(+el.dataset.id),
   mv: el => openMovie(+el.dataset.id),
   ep: el => openEpisode(+el.dataset.id, +el.dataset.s, +el.dataset.e),
+  reveal: () => { const sh = sheets.at(-1); if (sh) { sh.state.reveal = true; sh.refresh(); } },
+  errLog: () => openErrLog(),
+  async errClear() { const sh = sheets.at(-1); const ids = (sh?.state.list || []).map(r => r.id); if (!ids.length) return; await store.deleteErrors(ids); sh.state.list = []; sh.refresh(); toast("Journal vidé"); },
+  async calOn() { const tk = newToken(); await store.setUserDoc({ calToken: tk, calAt: Date.now() }); ui.userDoc = { ...(ui.userDoc || {}), calToken: tk }; refreshCalCard(); toast("Calendrier créé"); },
+  async calReset() { const tk = newToken(); await store.setUserDoc({ calToken: tk, calAt: Date.now() }); ui.userDoc = { ...(ui.userDoc || {}), calToken: tk }; refreshCalCard(); toast("Nouveau lien créé : ré-ajoute le calendrier"); },
+  async calCopy() { const u = calUrl(ui.userDoc?.calToken).https; try { await navigator.clipboard.writeText(u); toast("Lien copié"); } catch { prompt("Copie ce lien :", u); } },
+  recap: el => openRecap(el.dataset.v ? +el.dataset.v : recapYear()),
+  recapShare: () => shareRecap(),
   closeSheet: () => history.back(),
   sfilter: el => { ui.seriesFilter = el.dataset.v; renderView(); },
   mseg: el => { ui.movieSeg = el.dataset.v; renderView(); },
@@ -1494,7 +1732,7 @@ document.addEventListener("click", ev => {
   const el = ev.target.closest("[data-a]"); if (!el) return;
   const fn = A[el.dataset.a]; if (!fn) return;
   ev.preventDefault(); ev.stopPropagation();
-  Promise.resolve(fn(el, ev)).catch(e => { console.error(e); onErr(e); if (!["BAD_KEY", "NO_KEY"].includes(e.message)) toast("Erreur : " + e.message); });
+  Promise.resolve(fn(el, ev)).catch(e => { console.error(e); logError(e, "action:" + el.dataset.a); onErr(e); if (!["BAD_KEY", "NO_KEY"].includes(e.message)) toast("Erreur : " + e.message); });
 });
 
 // ═════════════ Swipe gauche / droite entre les filtres ═════════════
@@ -1674,14 +1912,15 @@ const authErr = e => ({
 // ═════════════ Démarrage ═════════════
 // En cas de pépin, on affiche l'erreur (capture d'écran = diagnostic) et un bouton pour relancer proprement.
 let bootErr = null;
-addEventListener("error", e => { if (ui.mode !== "app") bootErr = e.error || e.message; });
-addEventListener("unhandledrejection", e => { if (ui.mode !== "app") bootErr = e.reason; });
+addEventListener("error", e => { if (ui.mode !== "app") bootErr = e.error || e.message; logError(e.error || e.message, "window"); });
+addEventListener("unhandledrejection", e => { if (ui.mode !== "app") bootErr = e.reason; logError(e.reason, "promise"); });
 const errText = e => esc(String(e?.message || e || "erreur inconnue")).slice(0, 300);
 function relaunch() {
   Promise.resolve(window.caches?.keys?.()).then(ks => Promise.all((ks || []).filter(k => k !== "bobine-img").map(k => caches.delete(k))))
     .catch(() => { }).then(() => location.reload());
 }
 function fatal(e) {
+  logError(e, "fatal");
   ui.mode = "error";
   bare(`${logo}<p>Playwatch n'a pas pu s'afficher.</p><button class="btn pri" id="relaunch">Relancer</button><p class="err" style="font-size:12px;opacity:.75;margin-top:18px;word-break:break-word">${errText(e)}${bootErr && errText(bootErr) !== errText(e) ? "<br>" + errText(bootErr) : ""}</p>`);
   $("#relaunch").onclick = relaunch;
@@ -1718,6 +1957,8 @@ async function startApp() {
   hideSplash();
   if (!pushDone) pushP.then(quietRender);
   push.refresh();
+  // Préférences liées au compte (mode sans spoiler choisi sur un autre appareil, calendrier)
+  store.getUserDoc().then(d => { ui.userDoc = d; if (typeof d.nospoil === "boolean" && d.nospoil !== ui.nospoil) setNoSpoil(d.nospoil, true); }).catch(() => { });
 }
 
 async function boot() {

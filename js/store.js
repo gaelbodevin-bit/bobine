@@ -57,6 +57,20 @@ async function loadFirebase() {
 }
 
 let unsubs = [];
+// « Synchronisé » = le serveur a confirmé les séries et les films (au moins une fois depuis la connexion).
+// Le démarrage attend ce signal (avec un délai max) pour afficher directement l'état final, sans saut.
+const synced = { shows: false, movies: false };
+let syncWaiters = [];
+function markSynced(col) {
+  if (synced[col]) return; synced[col] = true;
+  if (synced.shows && synced.movies) { syncWaiters.forEach(f => f()); syncWaiters = []; }
+}
+export function whenSynced(ms) {
+  return new Promise(res => {
+    if (synced.shows && synced.movies) return res(true);
+    syncWaiters.push(() => res(true)); setTimeout(() => res(false), ms);
+  });
+}
 // Synchro différentielle : au démarrage on relit le cache local (gratuit), puis on n'écoute
 // que les documents modifiés depuis la dernière synchro (updatedAt). Les suppressions sont des
 // « pierres tombales » ({ deleted: true }) pour être propagées. Resynchro complète 1×/semaine.
@@ -82,8 +96,11 @@ async function syncCol(uid, col, map, onReady) {
     if (since) onReady();
   }
   const q = since ? fs.query(ref, fs.where("updatedAt", ">", since - MARGIN)) : ref;
-  const un = fs.onSnapshot(q, snap => {
-    snap.docChanges().forEach(c => { if (c.type === "removed") { if (!since) map.delete(+c.doc.id); } else applyDoc(map, c.doc); });
+  let raised = false;
+  // includeMetadataChanges : on est prévenu quand le serveur confirme, même s'il n'y a rien de nouveau
+  const un = fs.onSnapshot(q, { includeMetadataChanges: true }, snap => {
+    const ch = snap.docChanges();
+    ch.forEach(c => { if (c.type === "removed") { if (!since) map.delete(+c.doc.id); } else applyDoc(map, c.doc); });
     if (!snap.metadata.fromCache) {
       let max = 0;
       snap.docs.forEach(d => { const u = d.data().updatedAt || 0; if (u > max) max = u; });
@@ -92,8 +109,12 @@ async function syncCol(uid, col, map, onReady) {
       m[col] = Math.max(m[col] || 0, max);
       if (!since) { m.full = m.full || {}; m.full[col] = Date.now(); }
       saveMeta(uid, m);
+      if (col in synced) markSynced(col);
     }
-    onReady();
+    // Premier chargement sur cet appareil : un cache vide n'est pas une liste vide, on attend le serveur
+    if (!since && !raised && snap.metadata.fromCache && snap.empty && navigator.onLine) return;
+    // Simple confirmation du serveur sans changement : pas de nouveau rendu
+    if (ch.length || !raised) { raised = true; onReady(); }
   }, err => {
     console.error(err);
     if (since) { un(); const m = syncMeta(uid); delete m[col]; saveMeta(uid, m); syncCol(uid, col, map, onReady); }
@@ -102,6 +123,7 @@ async function syncCol(uid, col, map, onReady) {
 }
 function subscribeUser(uid) {
   unsubs.forEach(u => u()); unsubs = [];
+  synced.shows = synced.movies = false;
   let gotS = false, gotM = false;
   syncCol(uid, "shows", state.shows, () => { gotS = true; if (gotM) state.ready = true; emit(); });
   syncCol(uid, "movies", state.movies, () => { gotM = true; if (gotS) state.ready = true; emit(); });
@@ -120,7 +142,8 @@ export async function init() {
   if (!hasFirebase) {
     localLoad();
     state.user = { uid: "local", local: true }; state.premium = true;
-    state.ready = true; emit();
+    markSynced("shows"); markSynced("movies");
+    state.ready = true; state.gamesReady = true; emit();
     return state.user;
   }
   await loadFirebase();
@@ -139,6 +162,7 @@ export async function init() {
         state.user = null; state.ready = true; state.premium = false;
       }
       emit();
+      flushErrors();
       if (first) { first = false; res(state.user); }
     });
   });
@@ -300,4 +324,47 @@ export async function wipeAll() {
   for (let i = 0; i < refs.length; i += 400) {
     const now = Date.now(); const b = fs.writeBatch(db); refs.slice(i, i + 400).forEach(r => b.set(r, { id: +r.id, deleted: true, updatedAt: now })); await b.commit();
   }
+}
+
+// ═════════════════ Préférences du compte (users/{uid}) ═════════════════
+// Lues par le serveur : mode sans spoiler (notifications), lien secret du calendrier.
+export async function getUserDoc() {
+  if (!state.user || state.user.local) { try { return JSON.parse(localStorage.getItem("bobine:userdoc") || "{}"); } catch { return {}; } }
+  const { db, fs } = fb;
+  const d = await fs.getDoc(fs.doc(db, "users", state.user.uid)).catch(() => fs.getDocFromCache(fs.doc(db, "users", state.user.uid)));
+  return d.data() || {};
+}
+export async function setUserDoc(data) {
+  if (!state.user || state.user.local) { const cur = await getUserDoc(); try { localStorage.setItem("bobine:userdoc", JSON.stringify({ ...cur, ...data })); } catch { } return; }
+  const { db, fs } = fb;
+  return fs.setDoc(fs.doc(db, "users", state.user.uid), data, { merge: true });
+}
+
+// ═════════════════ Journal des plantages ═════════════════
+// Chaque erreur est d'abord gardée sur l'appareil (au cas où Firebase lui-même ne se charge pas),
+// puis envoyée dans la collection « errors » dès que possible. Lecture réservée à l'administrateur.
+const EQ = "bobine:errq";
+const readQ = () => { try { return JSON.parse(localStorage.getItem(EQ) || "[]"); } catch { return []; } };
+export function logError(rec) {
+  const q = readQ(); q.push({ ...rec, uid: state.user?.uid && !state.user.local ? state.user.uid : null, email: state.user?.email || null });
+  try { localStorage.setItem(EQ, JSON.stringify(q.slice(-10))); } catch { }
+  flushErrors();
+}
+export function flushErrors() {
+  if (!hasFirebase || !fb) return;
+  const q = readQ(); if (!q.length) return;
+  try { localStorage.removeItem(EQ); } catch { }
+  const { db, fs } = fb;
+  const me = state.user && !state.user.local ? state.user : null;
+  // Écriture locale immédiate (cache Firestore), envoyée au serveur dès que le réseau revient
+  for (const r of q) fs.addDoc(fs.collection(db, "errors"), { ...r, uid: me?.uid || null, email: me?.email || r.email || null, ts: fs.serverTimestamp() }).catch(e => console.warn("journal", e.code || e));
+}
+export async function listErrors(n = 60) {
+  const { db, fs } = fb;
+  const snap = await fs.getDocs(fs.query(fs.collection(db, "errors"), fs.orderBy("ts", "desc"), fs.limit(n)));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+export async function deleteErrors(ids) {
+  const { db, fs } = fb;
+  for (let i = 0; i < ids.length; i += 400) { const b = fs.writeBatch(db); ids.slice(i, i + 400).forEach(id => b.delete(fs.doc(db, "errors", id))); await b.commit(); }
 }
