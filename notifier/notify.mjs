@@ -77,10 +77,13 @@ async function runUser(uid, subs) {
     await send(subs, { title: "Playwatch 🎬", body: "Notification de test envoyée par le serveur. Tout fonctionne !", url: APP_URL + "#upnext", tag: "test" });
     return;
   }
-  const [showsSnap, moviesSnap] = await Promise.all([
+  const [showsSnap, moviesSnap, userSnap] = await Promise.all([
     db.collection(`users/${uid}/shows`).get(),
-    db.collection(`users/${uid}/movies`).where("status", "==", "watchlist").get()
+    db.collection(`users/${uid}/movies`).where("status", "==", "watchlist").get(),
+    db.doc(`users/${uid}`).get()
   ]);
+  // Mode sans spoiler (réglé dans l'app) : ni titre ni image d'épisode dans la notification
+  const nospoil = !!userSnap.data()?.nospoil;
   const notes = []; let badge = 0;
 
   await Promise.all(showsSnap.docs.map(async d => {
@@ -99,7 +102,7 @@ async function runUser(uid, subs) {
       const todo = fresh.filter(e => !already.has(SE(e.season_number, e.episode_number)));
       if (!todo.length) return;
       const first = todo[0], last = todo.at(-1);
-      const name = (e) => e.name && !/^Épisode \d+$/.test(e.name) ? ` · ${e.name}` : "";
+      const name = (e) => !nospoil && e.name && !/^Épisode \d+$/.test(e.name) ? ` · ${e.name}` : "";
       notes.push({
         kind: "tv", name: t.name,
         payload: {
@@ -107,7 +110,7 @@ async function runUser(uid, subs) {
           body: todo.length === 1
             ? `Nouvel épisode : ${SE(first.season_number, first.episode_number)}${name(first)}`
             : `${todo.length} nouveaux épisodes : ${SE(first.season_number, first.episode_number)} → ${SE(last.season_number, last.episode_number)}`,
-          image: first.still_path ? IMG + "w780" + first.still_path : (t.backdrop_path ? IMG + "w780" + t.backdrop_path : undefined),
+          image: first.still_path && !nospoil ? IMG + "w780" + first.still_path : (t.backdrop_path ? IMG + "w780" + t.backdrop_path : undefined),
           icon: t.poster_path ? IMG + "w185" + t.poster_path : undefined,
           url: APP_URL + "#tv-" + show.id,
           tag: "tv-" + show.id
