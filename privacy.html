@@ -19,18 +19,22 @@ li{margin:4px 0} .logo{display:flex;align-items:center;gap:10px;margin-bottom:22
 <li><b>Contenu de ton suivi</b> : séries, épisodes vus, films, jeux vidéo, statuts, notes que tu attribues, dates d'ajout et de visionnage.</li>
 <li><b>Notifications</b> : si tu les actives, un identifiant d'abonnement technique (adresse d'envoi fournie par ton navigateur ou ton téléphone) et ton fuseau horaire.</li>
 <li><b>Achat Premium</b> (facultatif) : le paiement est traité par <b>Google Play</b> (application Android) ou <b>Stripe</b> (iPhone et web). Playwatch ne voit jamais tes coordonnées bancaires ; seuls la confirmation d'achat, sa référence, son montant et l'adresse e-mail de paiement sont conservés pour activer et justifier ton accès Premium.</li>
-<li><b>Préférences d'affichage</b> (thème, couleurs, onglets) : stockées uniquement sur ton appareil.</li>
+<li><b>Préférences d'affichage</b> (thème, couleurs, onglets) : stockées uniquement sur ton appareil. Le choix du <b>mode sans spoiler</b> est aussi enregistré dans ton compte, pour masquer les titres d'épisodes dans les notifications et le calendrier.</li>
+<li><b>Rapports de plantage</b> : en cas d'erreur de l'application, un rapport technique est envoyé automatiquement (message d'erreur, version de l'application, modèle et version du navigateur ou du système, onglet affiché, date, et l'identifiant et l'e-mail du compte s'il est connecté). Il sert uniquement à corriger les bugs, n'est lisible que par l'éditeur et est effacé une fois le problème traité.</li>
+<li><b>Calendrier</b> (Premium, facultatif) : si tu crées un calendrier abonnable, un lien secret est enregistré dans ton compte. Toute personne disposant de ce lien peut voir les dates de sortie de ta liste : tu peux le remplacer à tout moment (Paramètres → Calendrier).</li>
 </ul></div>
 <p>Playwatch ne contient <b>aucune publicité</b>, <b>aucun outil de mesure d'audience</b> et ne vend ni ne partage tes données à des fins commerciales. Aucune donnée de localisation, de contacts ou de photos n'est collectée, et aucune coordonnée bancaire n'est stockée par Playwatch.</p>
 <h2>Finalités</h2><ul>
 <li>Synchroniser ton suivi entre tes appareils.</li>
-<li>T'envoyer, si tu l'as demandé, une notification quand un nouvel épisode, un film ou un jeu de ta liste sort.</li></ul>
+<li>T'envoyer, si tu l'as demandé, une notification quand un nouvel épisode, un film ou un jeu de ta liste sort.</li>
+<li>Fournir, si tu l'as demandé, un calendrier des sorties de ta liste.</li>
+<li>Détecter et corriger les plantages de l'application (intérêt légitime de l'éditeur à fournir un service fiable, article 6.1.f du RGPD).</li></ul>
 <p>Base légale : l'exécution du service que tu demandes en créant un compte (article 6.1.b du RGPD).</p>
 <h2>Hébergement et sous-traitants</h2><ul>
 <li><b>Google Firebase</b> (Authentication et Cloud Firestore) — données hébergées dans l'Union européenne (région Paris, europe-west9).</li>
 <li><b>GitHub Pages</b> — hébergement du code de l'application.</li>
 <li><b>GitHub Actions</b> — envoi automatique des notifications.</li>
-<li><b>Google Cloud Functions</b> (Union européenne) — vérification des achats Premium.</li>
+<li><b>Google Cloud Functions</b> (Union européenne) — vérification des achats Premium et calendrier abonnable.</li>
 <li><b>Google Play</b> et <b>Stripe</b> — traitement des paiements Premium.</li></ul>
 <p>Pour afficher les affiches, résumés et dates de sortie, ton appareil interroge directement <b>The Movie Database (TMDB)</b> et <b>RAWG</b>. Ces services reçoivent tes recherches et ton adresse IP comme pour tout site web, mais aucune information de ton compte Playwatch.</p>
 <h2>Durée de conservation</h2><p>Tes données sont conservées tant que ton compte existe. Elles sont effacées définitivement dès que tu supprimes ton compte, à l'exception de la référence d'achat Premium, conservée pendant la durée légale de conservation des pièces comptables (10 ans).</p>
@@ -38,4 +42,4 @@ li{margin:4px 0} .logo{display:flex;align-items:center;gap:10px;margin-bottom:22
 <h2>Suppression du compte</h2><p>Dans l'application : <b>Profil → Supprimer mon compte</b>. Toutes les étapes sont détaillées sur la page <a href="delete-account.html">Suppression des données</a>.</p>
 <h2>Mineurs</h2><p>Playwatch ne s'adresse pas spécifiquement aux enfants de moins de 13 ans et ne collecte pas sciemment leurs données.</p>
 <h2>Crédits</h2><p>Ce produit utilise l'API TMDB mais n'est ni approuvé ni certifié par TMDB. Données de jeux vidéo fournies par <a href="https://rawg.io">RAWG</a>.</p>
-<p class="sub" style="margin-top:40px">Dernière mise à jour : 18 octobre 2026</p></main></body></html>
+<p class="sub" style="margin-top:40px">Dernière mise à jour : 26 octobre 2026</p></main></body></html>
