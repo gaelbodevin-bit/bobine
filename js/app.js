@@ -80,7 +80,7 @@ const pimg = (path, alt, size = "w342") => path
 // ═════════════ État UI + caches de détails ═════════════
 const ui = { tab: "series", seriesFilter: "watching", sugSeg: "movie", sug: {}, movieSeg: "watchlist", seriesView: (() => { try { return localStorage.getItem("bobine:sview") || "grid"; } catch { return "grid"; } })(), q: "", pushStatus: null, mode: null };
 ui.nospoil = (() => { try { return localStorage.getItem("bobine:nospoil") === "1"; } catch { return false; } })();
-const APP_V = "v32";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
+const APP_V = "v33";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
 const ADMINS = ["gael.bodevin@gmail.com", "bluecellproduction@gmail.com", "fast.and.spermious@gmail.com"];
 const isAdmin = () => ADMINS.includes((store.data.user?.email || "").toLowerCase());
 
@@ -664,40 +664,79 @@ function vExplore(v, force) {
   $("#q").addEventListener("keydown", e => { if (e.key === "Enter") { e.target.blur(); clearTimeout(searchT); doSearch(); } });
   if (ui.q && !ui.results) doSearch(); else renderResults();
   if (!ui.discover) loadDiscover();
-  loadAnime();
+  loadLatest(ui.dseg);
   loadSug(ui.sugSeg);
 }
 // Barre de recherche + bouton « Annuler » (visible pendant la saisie ou s'il y a une recherche en cours)
 const searchRow = (id, ph, val) => `<div class="srow ${val ? "on" : ""}"><label class="search">${I.search}<input id="${id}" type="search" placeholder="${ph}" autocomplete="off" autocapitalize="off" enterkeyhint="search" value="${esc(val || "")}"></label><button class="scancel" data-a="qcancel" data-v="${id}">Annuler</button></div>`;
 
-// ── Animés : derniers épisodes sortis (façon VoirAnime) ──
-async function loadAnime() {
-  if (ui.anime && (ui.anime === "loading" || Date.now() - ui.animeAt < 3 * 3600e3)) return;
-  ui.anime = "loading";
-  try {
-    const td = isoToday(), from = new Date(Date.now() - 10 * DAY).toISOString().slice(0, 10);
-    const pages = await Promise.all([1, 2].map(page => tmdb.get("/discover/tv", { with_genres: "16", with_original_language: "ja", "air_date.gte": from, "air_date.lte": td, sort_by: "popularity.desc", page }, { ttl: 3 })));
-    const seen = new Set(), list = pages.flatMap(p => p.results || []).filter(x => !seen.has(x.id) && seen.add(x.id)).slice(0, 24);
-    const det = await Promise.all(list.map(x => tmdb.tv(x.id).catch(() => null)));
-    ui.anime = det.map((t, i) => t && { id: list[i].id, pop: list[i].popularity || 0, t, la: t.last_episode_to_air })
-      .filter(x => x?.la?.air_date && x.la.air_date <= td && x.la.air_date >= from && x.la.season_number > 0)
-      .sort((a, b) => a.la.air_date < b.la.air_date ? 1 : a.la.air_date > b.la.air_date ? -1 : b.pop - a.pop);
-    ui.animeAt = Date.now();
-  } catch (e) { onErr(e); ui.anime = []; ui.animeAt = Date.now(); }
-  if (ui.tab === "discover" && !Array.isArray(ui.results)) renderResults();
+// ── Dernières sorties : Animés / Séries / Films (onglets de Découvrir) ──
+const DSEGS = [["sel", "Sélection"], ["anime", "Animés"], ["tv", "Séries"], ["movie", "Films"]];
+ui.dseg = (() => { try { const v = localStorage.getItem("bobine:dseg"); return DSEGS.some(x => x[0] === v) ? v : "sel"; } catch { return "sel"; } })();
+ui.latest = {};
+const ago = n => new Date(Date.now() - n * DAY).toISOString().slice(0, 10);
+async function loadLatest(kind) {
+  if (kind === "sel") return;
+  const L = ui.latest[kind];
+  if (L && (L === "loading" || Date.now() - L.at < 3 * 3600e3)) return;
+  ui.latest[kind] = "loading";
+  try { ui.latest[kind] = { at: Date.now(), items: kind === "movie" ? await latestMovies() : await latestEps(kind) }; }
+  catch (e) { onErr(e); ui.latest[kind] = { at: Date.now(), items: kind === "movie" ? { vod: [], cine: [] } : [] }; }
+  if (ui.tab === "discover" && ui.dseg === kind && !Array.isArray(ui.results)) renderResults();
 }
-function animeHtml() {
-  const A = ui.anime;
-  const h = sec("Animés · derniers épisodes") + `<div class="sugsub">Les sorties japonaises de ces 10 derniers jours, les plus récentes d'abord</div>`;
-  if (!Array.isArray(A)) return h + `<div class="row">${Array.from({ length: 3 }, () => `<div class="ac"><div class="p sk"></div></div>`).join("")}</div>`;
-  if (!A.length) return "";
-  return h + `<div class="row">${A.map(x => {
-    const s = store.data.shows.get(x.id), la = x.la, hide = s && hideEp(s, la.season_number, la.episode_number);
-    const pic = la.still_path && !hide ? img(la.still_path, "w300") : img(x.t.backdrop_path || x.t.poster_path, "w300");
-    const d = daysFrom(la.air_date);
-    return `<button class="ac" data-a="tv" data-id="${x.id}"><div class="p">${pic ? `<img src="${pic}" alt="" loading="lazy">` : `<div class="noimg">${esc(x.t.name)}</div>`}<span class="ep">${nSeasons(x.t) > 1 ? `S${la.season_number} · ` : ""}Ép. ${la.episode_number}</span>${d >= -1 ? `<span class="newb">NOUVEAU</span>` : ""}${s ? `<span class="badge">${I.check}</span>` : ""}</div><div class="t">${esc(x.t.name)}</div><div class="s">${esc(rel(la.air_date))}${!hide && la.name && !/^Épisode \d+$/.test(la.name) ? " · " + esc(la.name) : ""}</div></button>`;
-  }).join("")}</div>`;
+// Épisodes sortis récemment : animés japonais (10 j) ou séries hors animation, talk-shows, info, télé-réalité, soaps (7 j)
+async function latestEps(kind) {
+  const days = kind === "anime" ? 10 : 7, td = isoToday(), from = ago(days);
+  const base = kind === "anime" ? { with_genres: "16", with_original_language: "ja" } : { without_genres: "16,10763,10764,10766,10767", "vote_count.gte": "30" };
+  const pages = await Promise.all([1, 2].map(page => tmdb.get("/discover/tv", { ...base, "air_date.gte": from, "air_date.lte": td, sort_by: "popularity.desc", page }, { ttl: 3 })));
+  const seen = new Set(), list = pages.flatMap(p => p.results || []).filter(x => !seen.has(x.id) && seen.add(x.id)).slice(0, 36);
+  const det = await Promise.all(list.map(x => tmdb.tv(x.id).catch(() => null)));
+  return det.map((t, i) => t && { id: list[i].id, pop: list[i].popularity || 0, t, la: t.last_episode_to_air })
+    .filter(x => x?.la?.air_date && x.la.air_date <= td && x.la.air_date >= from && x.la.season_number > 0)
+    .sort((a, b) => a.la.air_date < b.la.air_date ? 1 : a.la.air_date > b.la.air_date ? -1 : b.pop - a.pop);
 }
+// Films : nouveautés VOD / streaming en France (30 j) et films à l'affiche
+async function latestMovies() {
+  const td = isoToday(), from = ago(30);
+  const [vodP, ...cineP] = await Promise.all([
+    tmdb.get("/discover/movie", { region: "FR", with_release_type: "4", "release_date.gte": from, "release_date.lte": td, sort_by: "popularity.desc" }, { ttl: 6 }),
+    ...[1, 2].map(page => tmdb.get("/movie/now_playing", { region: "FR", page }, { ttl: 6 }))
+  ]);
+  const det = async arr => (await Promise.all(arr.slice(0, 24).map(x => tmdb.movie(x.id).then(d => ({ ...x, d }), () => null)))).filter(Boolean);
+  const seenC = new Set();
+  const [vod, cine] = await Promise.all([det(vodP.results || []), det(cineP.flatMap(p => p.results || []).filter(x => !seenC.has(x.id) && seenC.add(x.id)))]);
+  const by = k => (a, b) => (b[k] || "") > (a[k] || "") ? 1 : (b[k] || "") < (a[k] || "") ? -1 : (b.popularity || 0) - (a.popularity || 0);
+  return {
+    vod: vod.map(x => ({ ...x, date: x.d.release_fr?.digital })).filter(x => x.date && x.date >= from && x.date <= td).sort(by("date")),
+    cine: cine.map(x => ({ ...x, date: x.d.release_fr?.theatrical || x.release_date })).filter(x => x.date && x.date <= td).sort(by("date"))
+  };
+}
+const dayLabel = date => { const d = daysFrom(date); if (d === 0) return "Aujourd'hui"; if (d === -1) return "Hier"; const f = fmtLong(date); return f.charAt(0).toUpperCase() + f.slice(1); };
+function epCard(x) {
+  const s = store.data.shows.get(x.id), la = x.la, hide = s && hideEp(s, la.season_number, la.episode_number);
+  const pic = la.still_path && !hide ? img(la.still_path, "w300") : img(x.t.backdrop_path || x.t.poster_path, "w300");
+  const fresh = daysFrom(la.air_date) >= -1;
+  return `<button class="ac" data-a="tv" data-id="${x.id}"><div class="p">${pic ? `<img src="${pic}" alt="" loading="lazy">` : `<div class="noimg">${esc(x.t.name)}</div>`}<span class="ep">${nSeasons(x.t) > 1 ? `S${la.season_number} · ` : ""}Ép. ${la.episode_number}</span>${fresh ? `<span class="newb">NOUVEAU</span>` : ""}${s ? `<span class="badge">${I.check}</span>` : ""}</div><div class="t">${esc(x.t.name)}</div><div class="s">${!hide && la.name && !/^Épisode \d+$/.test(la.name) ? esc(la.name) : (x.t.networks?.[0] ? esc(x.t.networks[0]) : "&nbsp;")}</div></button>`;
+}
+function latestHtml(kind) {
+  const L = ui.latest[kind];
+  const intro = { anime: "Les épisodes d'animés japonais sortis ces 10 derniers jours, les plus récents d'abord.", tv: "Les épisodes de séries sortis cette semaine, les plus récents d'abord.", movie: "Les films arrivés ce mois-ci en VOD / streaming en France, et ceux à l'affiche au cinéma." }[kind];
+  let h = `<div class="sugsub" style="margin:-4px 0 10px">${intro}</div>`;
+  if (!L || L === "loading") return h + (kind === "movie" ? `<div class="grid">${Array.from({ length: 6 }, () => `<div class="gp"><div class="p sk"></div></div>`).join("")}</div>` : `<div class="agrid">${Array.from({ length: 6 }, () => `<div class="ac"><div class="p sk"></div></div>`).join("")}</div>`);
+  if (kind === "movie") {
+    const cell = (x, lbl) => `<button class="gp" data-a="mv" data-id="${x.id}"><div class="p">${pimg(x.d.poster_path || x.poster_path, x.d.title || x.title)}${daysFrom(x.date) >= -6 ? `<span class="newb">NOUVEAU</span>` : ""}${store.data.movies.has(x.id) ? `<span class="badge">${I.check}</span>` : ""}</div><div class="t">${esc(x.d.title || x.title)}</div><div class="s">${lbl} ${esc(fmtShort(x.date))}</div></button>`;
+    const { vod, cine } = L.items;
+    if (!vod.length && !cine.length) return h + `<div class="empty" style="padding:30px">Rien de nouveau pour l'instant.</div>`;
+    if (vod.length) h += sec("Nouveau en VOD / streaming", vod.length) + `<div class="grid">${vod.map(x => cell(x, "VOD")).join("")}</div>`;
+    if (cine.length) h += sec("À l'affiche au cinéma", cine.length) + `<div class="grid">${cine.map(x => cell(x, "Ciné")).join("")}</div>`;
+    return h;
+  }
+  if (!L.items.length) return h + `<div class="empty" style="padding:30px">Aucun épisode sorti récemment.</div>`;
+  const groups = new Map(); L.items.forEach(x => { const k = x.la.air_date; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(x); });
+  for (const [date, arr] of groups) h += `<h3 class="lday">${esc(dayLabel(date))}<span>${arr.length}</span></h3><div class="agrid">${arr.map(epCard).join("")}</div>`;
+  return h;
+}
+
 async function doSearch() {
   const q = ui.q.trim(); const seq = ++searchSeq;
   if (!q) { ui.results = null; return renderResults(); }
@@ -729,7 +768,8 @@ function renderResults() {
     return;
   }
   const d = ui.discover || {};
-  r.innerHTML = animeHtml() + sugHtml() + discoverRows(d);
+  const seg = `<div class="seg dseg">${DSEGS.map(([k, l]) => `<button data-a="dseg" data-v="${k}" class="${ui.dseg === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
+  r.innerHTML = seg + (ui.dseg === "sel" ? sugHtml() + discoverRows(d) : latestHtml(ui.dseg));
 }
 function discoverRows(d) {
   const row = (arr) => `<div class="row">${(arr || []).slice(0, 20).map(x => `<button class="pc" data-a="${x.media_type === "tv" ? "tv" : "mv"}" data-id="${x.id}"><div class="p">${pimg(x.poster_path, x.name || x.title)}${inLib(x) ? `<span class="badge">${I.check}</span>` : ""}</div><div class="t">${esc(x.name || x.title)}</div><div class="s">${x.media_type === "tv" ? "Série" : "Film"} · ${year(x.first_air_date || x.release_date)}</div></button>`).join("")}</div>`;
@@ -1681,6 +1721,7 @@ const A = {
     const b = $(".roul"); b?.classList.add("spin"); setTimeout(() => { b?.classList.remove("spin"); openTv(pick.s.id); toast(`🎲 Ce soir : ${pick.t?.name || pick.s.name}`); }, 650);
   },
   sview: () => { ui.seriesView = ui.seriesView === "grid" ? "list" : "grid"; try { localStorage.setItem("bobine:sview", ui.seriesView); } catch { } renderView(); },
+  dseg: el => { ui.dseg = el.dataset.v; try { localStorage.setItem("bobine:dseg", ui.dseg); } catch { } loadLatest(ui.dseg); renderResults(); window.scrollTo(0, 0); },
   sugseg: el => { ui.sugSeg = el.dataset.v; loadSug(ui.sugSeg); renderResults(); },
   theme: el => { if (!premium.isPremium() && el.dataset.v !== "nuit") return openPaywall("theme"); applyTheme({ ...THEMES[el.dataset.v] }, true); renderView(true); },
   themeReset: () => { applyTheme(null, true); renderView(true); },
