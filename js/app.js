@@ -83,7 +83,7 @@ const pimg = (path, alt, size = "w342") => path
 // ═════════════ État UI + caches de détails ═════════════
 const ui = { tab: "series", seriesFilter: "watching", sugSeg: "movie", sug: {}, movieSeg: "watchlist", seriesView: (() => { try { return localStorage.getItem("bobine:sview") || "grid"; } catch { return "grid"; } })(), q: "", pushStatus: null, mode: null };
 ui.nospoil = (() => { try { return localStorage.getItem("bobine:nospoil") === "1"; } catch { return false; } })();
-const APP_V = "v40";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
+const APP_V = "v41";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
 const ADMINS = ["gael.bodevin@gmail.com", "bluecellproduction@gmail.com", "fast.and.spermious@gmail.com"];
 const isAdmin = () => ADMINS.includes((store.data.user?.email || "").toLowerCase());
 
@@ -1521,7 +1521,7 @@ function openLook() {
       <button class="iconbtn" data-a="tabMove" data-v="${dom}:${k}:-1" aria-label="Monter" ${i === 0 ? "disabled" : ""}>${I.cu}</button>
       <button class="iconbtn" data-a="tabMove" data-v="${dom}:${k}:1" aria-label="Descendre" ${i === list.length - 1 ? "disabled" : ""}>${I.cd}</button></div>`).join("");
     // Aperçu figé en haut ; seuls les réglages défilent en dessous (rien ne passe derrière l'aperçu)
-    return `<div class="look"><div class="look-head"><h2>Apparence</h2>${lookPreview()}</div>
+    return `<div class="look"><div class="look-head"><h2>Apparence</h2><div class="lp-wrap"><span class="lp-tag">${I.eye}Aperçu en direct</span>${lookPreview()}</div></div>
       <div class="look-scroll iscroll">
       ${P ? "" : `<div class="info" style="margin-top:12px">${I.lock}<div>Thèmes, couleurs, coins, barre et presets font partie de Premium. L'ordre des onglets est libre pour tous. <button class="linkbtn" data-a="paywall" data-v="theme">Découvrir Premium</button></div></div>`}
       <div class="card"><h3>Thèmes</h3><div class="swatches">${Object.entries(THEMES).map(([k, t]) => swatchHtml(t, cur.bg === t.bg && cur.band === t.band && cur.ac === t.ac && !cur.tx, `data-a="theme" data-v="${k}" title="${t.name}"`)).join("")}</div></div>
@@ -1533,10 +1533,10 @@ function openLook() {
         ${ed != null ? `<div class="pacts"><button class="linkbtn" data-a="presetAsNew" ${presets.length >= 12 ? "disabled" : ""}>Enregistrer comme nouveau preset</button><button class="linkbtn" data-a="presetEditCancel">Annuler la modification</button></div>` : ""}
         ${ed == null && presets.length >= 12 ? `<p style="margin:6px 0 0">12 presets maximum : supprimes-en un pour en ajouter.</p>` : ""}</div>
       <div class="card"><h3>Couleurs</h3>
-        <label class="colrow"><span>Fond</span><input type="color" data-c="bg" value="${cur.bg}" ${dis}></label>
-        <label class="colrow"><span>Bandeaux et cartes</span><input type="color" data-c="band" value="${cur.band}" ${dis}></label>
-        <div class="colrow"><span>Texte${cur.tx ? "" : ` <small>auto</small>`}</span><span class="colpair">${cur.tx ? `<button class="linkbtn" data-a="txAuto">Auto</button>` : ""}<input type="color" data-c="tx" value="${cur.tx || autoTx(cur)}" aria-label="Couleur du texte" ${dis}></span></div>
-        <label class="colrow"><span>Accent</span><input type="color" data-c="ac" value="${cur.ac}" ${dis}></label>
+        ${colRow("Fond", "bg", cur.bg, dis)}
+        ${colRow("Bandeaux et cartes", "band", cur.band, dis)}
+        ${colRow("Texte" + (cur.tx ? "" : ` <small>auto</small>`), "tx", cur.tx || autoTx(cur), dis, cur.tx ? `<button class="linkbtn" data-a="txAuto">Auto</button>` : "")}
+        ${colRow("Accent", "ac", cur.ac, dis)}
         ${cur.tx && Math.abs(lum(cur.tx) - lum(cur.bg)) < .25 ? `<p class="warn">Texte peu lisible sur ce fond : choisis une couleur plus contrastée.</p>` : ""}</div>
       <div class="card"><h3>Coins</h3>${seg(RADII, "radius", "lookRad")}
         <h3 style="margin-top:14px">Barre d'onglets</h3>${seg(BARS, "bar", "lookBar")}</div>
@@ -1577,6 +1577,8 @@ function savePreset(idx) {
   ui.lookSh?.refresh();
   toast(editing || same >= 0 ? `Preset « ${name} » mis à jour` : `Preset « ${name} » enregistré`);
 }
+// Ligne de couleur : code hexadécimal + pastille bien visible (cadre contrasté, même si la couleur = fond de la carte)
+const colRow = (label, k, v, dis, extra = "") => `<div class="colrow"><span>${label}</span><span class="colpair">${extra}<code class="hex" data-hex="${k}">${v.toUpperCase()}</code><label class="cpick" style="--c:${v}"><input type="color" data-c="${k}" value="${v}" aria-label="${label.replace(/<[^>]+>/g, "").trim()}" ${dis}></label></span></div>`;
 const lookRefresh = () => { ui.lookSh?.refresh(); renderView(true); };
 function setLook(patch) {
   if (!premium.isPremium()) return openPaywall("theme");
@@ -1609,7 +1611,9 @@ document.addEventListener("input", e => {
   const k = e.target?.dataset?.c; if (!k) return;
   if (!premium.isPremium()) return openPaywall("theme");
   const t = curTheme(); t[k] = e.target.value; delete t.name;
-  applyTheme(t, true);   // aperçu en direct : les variables CSS changent, la fenêtre n'est pas reconstruite
+  applyTheme(t, true);
+  document.querySelectorAll(`[data-hex="${k}"]`).forEach(x => x.textContent = e.target.value.toUpperCase());
+  e.target.closest(".cpick")?.style.setProperty("--c", e.target.value);   // aperçu en direct : les variables CSS changent, la fenêtre n'est pas reconstruite
 });
 // Sélecteur de couleur refermé → mise à jour des pastilles, presets et avertissements
 document.addEventListener("change", e => { if (e.target?.dataset?.c && ui.lookSh) ui.lookSh.refresh(); });
