@@ -83,7 +83,7 @@ const pimg = (path, alt, size = "w342") => path
 // ═════════════ État UI + caches de détails ═════════════
 const ui = { tab: "series", seriesFilter: "watching", sugSeg: "movie", sug: {}, movieSeg: "watchlist", seriesView: (() => { try { return localStorage.getItem("bobine:sview") || "grid"; } catch { return "grid"; } })(), q: "", pushStatus: null, mode: null };
 ui.nospoil = (() => { try { return localStorage.getItem("bobine:nospoil") === "1"; } catch { return false; } })();
-const APP_V = "v38";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
+const APP_V = "v39";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
 const ADMINS = ["gael.bodevin@gmail.com", "bluecellproduction@gmail.com", "fast.and.spermious@gmail.com"];
 const isAdmin = () => ADMINS.includes((store.data.user?.email || "").toLowerCase());
 
@@ -1501,7 +1501,7 @@ function lookPreview() {
     <div class="up"><div class="th" style="background:${LP_ART[1]}"><span class="new">NOUVEL ÉP.</span></div>
       <div class="tx"><div class="n">Ma série préférée</div><div class="e">S02E05 · Le retour</div><div class="m">Il y a 2 jours</div><div class="bar"><i style="width:62%"></i></div></div>
       <span class="chk">${I.check}</span></div>
-    <div class="lp-chips"><span class="chip on">Tout</span><span class="chip">En cours</span><span class="chip">Plus tard</span></div>
+    <div class="lp-film"><i style="background:${LP_ART[0]}"></i><div><b>Dune : Deuxième partie</b><span>2024 · Science-fiction · 2 h 46</span><small>${I.star}8,2 · À voir</small></div></div>
     <div class="lp-posters">${LP_ART.map(g => `<i style="background:${g}"></i>`).join("")}</div>
     <nav class="lp-tabs">${tabs.map(([k, l, ic], i) => `<span class="${i ? "" : "on"}">${ic}${l}</span>`).join("")}</nav>
   </div></div>`;
