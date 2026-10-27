@@ -83,7 +83,7 @@ const pimg = (path, alt, size = "w342") => path
 // ═════════════ État UI + caches de détails ═════════════
 const ui = { tab: "series", seriesFilter: "watching", sugSeg: "movie", sug: {}, movieSeg: "watchlist", seriesView: (() => { try { return localStorage.getItem("bobine:sview") || "grid"; } catch { return "grid"; } })(), q: "", pushStatus: null, mode: null };
 ui.nospoil = (() => { try { return localStorage.getItem("bobine:nospoil") === "1"; } catch { return false; } })();
-const APP_V = "v39";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
+const APP_V = "v40";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
 const ADMINS = ["gael.bodevin@gmail.com", "bluecellproduction@gmail.com", "fast.and.spermious@gmail.com"];
 const isAdmin = () => ADMINS.includes((store.data.user?.email || "").toLowerCase());
 
@@ -1508,10 +1508,13 @@ function lookPreview() {
 }
 function openLook() {
   const start = { theme: getTheme(), order: JSON.stringify(ui.tabOrder) };
+  ui.lookEdit = null; ui.lookName = null;
   const sh = openSheet(sh => {
     sh.y = sh.el.querySelector(".look-scroll")?.scrollTop || 0;   // garder la position de défilement des réglages
     const cur = curTheme(), P = premium.isPremium(), dis = P ? "" : "disabled";
     const presets = getPresets();
+    if (ui.lookEdit != null && !presets[ui.lookEdit]) ui.lookEdit = null;
+    const ed = ui.lookEdit;
     const changed = JSON.stringify(getTheme()) !== JSON.stringify(start.theme) || JSON.stringify(ui.tabOrder) !== start.order;
     const seg = (list, key, act) => `<div class="seg lseg">${list.map(([k, l]) => `<button data-a="${act}" data-v="${k}" class="${(cur[key] || list[0][0]) === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
     const tabRows = (dom, list) => list.map(([k, l, ic], i) => `<div class="trow">${ic}<span>${l}${i === 0 ? ` <small>au lancement</small>` : ""}</span>
@@ -1522,11 +1525,13 @@ function openLook() {
       <div class="look-scroll iscroll">
       ${P ? "" : `<div class="info" style="margin-top:12px">${I.lock}<div>Thèmes, couleurs, coins, barre et presets font partie de Premium. L'ordre des onglets est libre pour tous. <button class="linkbtn" data-a="paywall" data-v="theme">Découvrir Premium</button></div></div>`}
       <div class="card"><h3>Thèmes</h3><div class="swatches">${Object.entries(THEMES).map(([k, t]) => swatchHtml(t, cur.bg === t.bg && cur.band === t.band && cur.ac === t.ac && !cur.tx, `data-a="theme" data-v="${k}" title="${t.name}"`)).join("")}</div></div>
-      <div class="card"><h3>Mes presets</h3>
-        ${presets.length ? `<div class="psets">${presets.map((p, i) => `<div class="pset ${sameLook(p, cur) ? "on" : ""}"><button class="psw" data-a="presetUse" data-v="${i}">${swatchHtml(p, false, "", "span")}<span>${esc(p.name)}</span></button><button class="iconbtn" data-a="presetDel" data-v="${i}" aria-label="Supprimer ${esc(p.name)}">${I.trash}</button></div>`).join("")}</div>`
+      <div class="card" id="pcard"><h3>Mes presets</h3>
+        ${presets.length ? `<p>Touche un preset pour l'appliquer, ${I.edit.replace("<svg", '<svg class="inl"')} pour le modifier.</p><div class="psets">${presets.map((p, i) => `<div class="pset ${ed === i ? "edit" : sameLook(p, cur) ? "on" : ""}"><button class="psw" data-a="presetUse" data-v="${i}">${swatchHtml(p, false, "", "span")}<span>${esc(p.name)}${ed === i ? `<small>${sameLook(p, cur) ? "en modification" : "modifié, non enregistré"}</small>` : ""}</span></button><button class="iconbtn" data-a="presetEdit" data-v="${i}" aria-label="Modifier ${esc(p.name)}">${I.edit}</button><button class="iconbtn del" data-a="presetDel" data-v="${i}" aria-label="Supprimer ${esc(p.name)}">${I.trash}</button></div>`).join("")}</div>`
           : `<p>Enregistre tes réglages actuels (couleurs, texte, coins, barre) pour y revenir en un geste, sur tous tes appareils.</p>`}
-        <div class="psave"><input class="field" id="pname" maxlength="24" placeholder="Nom du preset" autocomplete="off" ${dis}><button class="btn pri" data-a="presetSave" ${presets.length >= 12 ? "disabled" : ""}>${I.plus}Enregistrer</button></div>
-        ${presets.length >= 12 ? `<p style="margin:6px 0 0">12 presets maximum : supprimes-en un pour en ajouter.</p>` : ""}</div>
+        ${ed != null ? `<div class="pedit">${I.edit}<span>Modifie les couleurs, le texte, les coins ou la barre plus bas, puis mets à jour « ${esc(presets[ed].name)} ». Tu peux aussi le renommer.</span></div>` : ""}
+        <div class="psave"><input class="field" id="pname" maxlength="24" placeholder="Nom du preset" autocomplete="off" value="${esc(ui.lookName ?? (ed != null ? presets[ed].name : ""))}" ${dis}><button class="btn pri" data-a="presetSave" ${ed == null && presets.length >= 12 ? "disabled" : ""}>${ed != null ? I.check + "Mettre à jour" : I.plus + "Enregistrer"}</button></div>
+        ${ed != null ? `<div class="pacts"><button class="linkbtn" data-a="presetAsNew" ${presets.length >= 12 ? "disabled" : ""}>Enregistrer comme nouveau preset</button><button class="linkbtn" data-a="presetEditCancel">Annuler la modification</button></div>` : ""}
+        ${ed == null && presets.length >= 12 ? `<p style="margin:6px 0 0">12 presets maximum : supprimes-en un pour en ajouter.</p>` : ""}</div>
       <div class="card"><h3>Couleurs</h3>
         <label class="colrow"><span>Fond</span><input type="color" data-c="bg" value="${cur.bg}" ${dis}></label>
         <label class="colrow"><span>Bandeaux et cartes</span><input type="color" data-c="band" value="${cur.band}" ${dis}></label>
@@ -1548,6 +1553,29 @@ function openLook() {
   sh.start = start;
   ui.lookSh = sh;
   sh.onClose = () => { if (ui.lookSh === sh) ui.lookSh = null; };
+}
+// Enregistre l'apparence actuelle : met à jour le preset n° idx, ou en crée un nouveau (idx null)
+function savePreset(idx) {
+  if (!premium.isPremium()) return openPaywall("theme");
+  const list = getPresets(), cur = curTheme(); delete cur.name;
+  const typed = ($("#pname")?.value || "").trim().slice(0, 24);
+  const editing = idx != null && list[idx];
+  const name = typed || (editing ? list[idx].name : `Mon thème ${list.length + 1}`);
+  const same = list.findIndex((p, j) => j !== idx && p.name.toLowerCase() === name.toLowerCase());
+  if (editing) {
+    if (same >= 0) return toast(`Un autre preset s'appelle déjà « ${name} »`);
+    list[idx] = { ...cur, name };
+  } else if (same >= 0) {
+    if (!confirm(`Un preset « ${list[same].name} » existe déjà. Le remplacer par l'apparence actuelle ?`)) return;
+    list[same] = { ...cur, name };
+  } else {
+    if (list.length >= 12) return toast("12 presets maximum");
+    list.push({ ...cur, name });
+  }
+  setPresets(list);
+  ui.lookEdit = null; ui.lookName = null;
+  ui.lookSh?.refresh();
+  toast(editing || same >= 0 ? `Preset « ${name} » mis à jour` : `Preset « ${name} » enregistré`);
 }
 const lookRefresh = () => { ui.lookSh?.refresh(); renderView(true); };
 function setLook(patch) {
@@ -1577,6 +1605,7 @@ document.addEventListener("input", e => {
     }, 700);
     return;
   }
+  if (e.target?.id === "pname") { ui.lookName = e.target.value; return; }
   const k = e.target?.dataset?.c; if (!k) return;
   if (!premium.isPremium()) return openPaywall("theme");
   const t = curTheme(); t[k] = e.target.value; delete t.name;
@@ -1895,22 +1924,33 @@ const A = {
   },
   tabMove: el => { const [dom, k, d] = el.dataset.v.split(":"); moveTab(dom, k, +d); lookRefresh(); },
   tabReset: () => { ui.tabOrder = {}; try { localStorage.removeItem("bobine:taborder"); } catch { } lookRefresh(); },
-  presetSave: () => {
-    if (!premium.isPremium()) return openPaywall("theme");
-    const list = getPresets(), cur = curTheme(); delete cur.name;
-    const name = ($("#pname")?.value || "").trim().slice(0, 24) || `Mon thème ${list.length + 1}`;
-    const i = list.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
-    if (i >= 0) list[i] = { ...cur, name }; else if (list.length >= 12) return toast("12 presets maximum"); else list.push({ ...cur, name });
-    setPresets(list); ui.lookSh?.refresh(); toast(i >= 0 ? `Preset « ${name} » mis à jour` : `Preset « ${name} » enregistré`);
-  },
+  presetSave: () => savePreset(ui.lookEdit),
+  presetAsNew: () => savePreset(null),
   presetUse: el => {
     if (!premium.isPremium()) return openPaywall("theme");
     const p = getPresets()[+el.dataset.v]; if (!p) return;
+    ui.lookEdit = null; ui.lookName = null;
     const t = { ...p }; delete t.name; applyTheme(t, true); lookRefresh();
+  },
+  presetEdit: el => {
+    if (!premium.isPremium()) return openPaywall("theme");
+    const i = +el.dataset.v, p = getPresets()[i]; if (!p) return;
+    if (ui.lookEdit === i) { ui.lookEdit = null; ui.lookName = null; return lookRefresh(); }
+    ui.lookEdit = i; ui.lookName = null;
+    const t = { ...p }; delete t.name; applyTheme(t, true); lookRefresh();
+  },
+  presetEditCancel: () => {
+    const p = getPresets()[ui.lookEdit];
+    ui.lookEdit = null; ui.lookName = null;
+    if (p) { const t = { ...p }; delete t.name; applyTheme(t, true); }
+    lookRefresh();
   },
   presetDel: el => {
     const list = getPresets(), i = +el.dataset.v, p = list[i]; if (!p) return;
-    list.splice(i, 1); setPresets(list); ui.lookSh?.refresh();
+    if (!confirm(`Supprimer le preset « ${p.name} » ?`)) return;
+    list.splice(i, 1); setPresets(list);
+    if (ui.lookEdit === i) { ui.lookEdit = null; ui.lookName = null; } else if (ui.lookEdit > i) ui.lookEdit--;
+    ui.lookSh?.refresh();
     toast(`Preset « ${p.name} » supprimé`, "Annuler", () => { const l = getPresets(); l.splice(i, 0, p); setPresets(l); ui.lookSh?.refresh(); });
   },
   paywall: el => openPaywall(el.dataset.v),
