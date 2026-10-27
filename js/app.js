@@ -83,7 +83,7 @@ const pimg = (path, alt, size = "w342") => path
 // ═════════════ État UI + caches de détails ═════════════
 const ui = { tab: "series", seriesFilter: "watching", sugSeg: "movie", sug: {}, movieSeg: "watchlist", seriesView: (() => { try { return localStorage.getItem("bobine:sview") || "grid"; } catch { return "grid"; } })(), q: "", pushStatus: null, mode: null };
 ui.nospoil = (() => { try { return localStorage.getItem("bobine:nospoil") === "1"; } catch { return false; } })();
-const APP_V = "v37";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
+const APP_V = "v38";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
 const ADMINS = ["gael.bodevin@gmail.com", "bluecellproduction@gmail.com", "fast.and.spermious@gmail.com"];
 const isAdmin = () => ADMINS.includes((store.data.user?.email || "").toLowerCase());
 
@@ -1509,6 +1509,7 @@ function lookPreview() {
 function openLook() {
   const start = { theme: getTheme(), order: JSON.stringify(ui.tabOrder) };
   const sh = openSheet(sh => {
+    sh.y = sh.el.querySelector(".look-scroll")?.scrollTop || 0;   // garder la position de défilement des réglages
     const cur = curTheme(), P = premium.isPremium(), dis = P ? "" : "disabled";
     const presets = getPresets();
     const changed = JSON.stringify(getTheme()) !== JSON.stringify(start.theme) || JSON.stringify(ui.tabOrder) !== start.order;
@@ -1516,8 +1517,9 @@ function openLook() {
     const tabRows = (dom, list) => list.map(([k, l, ic], i) => `<div class="trow">${ic}<span>${l}${i === 0 ? ` <small>au lancement</small>` : ""}</span>
       <button class="iconbtn" data-a="tabMove" data-v="${dom}:${k}:-1" aria-label="Monter" ${i === 0 ? "disabled" : ""}>${I.cu}</button>
       <button class="iconbtn" data-a="tabMove" data-v="${dom}:${k}:1" aria-label="Descendre" ${i === list.length - 1 ? "disabled" : ""}>${I.cd}</button></div>`).join("");
-    return `<div class="body look"><h2 style="margin:8px 0 12px">Apparence</h2>
-      ${lookPreview()}
+    // Aperçu figé en haut ; seuls les réglages défilent en dessous (rien ne passe derrière l'aperçu)
+    return `<div class="look"><div class="look-head"><h2>Apparence</h2>${lookPreview()}</div>
+      <div class="look-scroll iscroll">
       ${P ? "" : `<div class="info" style="margin-top:12px">${I.lock}<div>Thèmes, couleurs, coins, barre et presets font partie de Premium. L'ordre des onglets est libre pour tous. <button class="linkbtn" data-a="paywall" data-v="theme">Découvrir Premium</button></div></div>`}
       <div class="card"><h3>Thèmes</h3><div class="swatches">${Object.entries(THEMES).map(([k, t]) => swatchHtml(t, cur.bg === t.bg && cur.band === t.band && cur.ac === t.ac && !cur.tx, `data-a="theme" data-v="${k}" title="${t.name}"`)).join("")}</div></div>
       <div class="card"><h3>Mes presets</h3>
@@ -1538,8 +1540,11 @@ function openLook() {
         ${ui.domains.games ? `${ui.domains.av ? `<div class="tdom">Jeux vidéo</div>` : ""}${tabRows("games", gTabs())}` : ""}
         ${Object.keys(ui.tabOrder).length ? `<button class="linkbtn" data-a="tabReset" style="margin-top:8px">Ordre par défaut</button>` : ""}</div>
       <div class="btns">${changed ? `<button class="btn ghost" data-a="lookUndo">${I.undo}Annuler mes changements</button>` : ""}<button class="btn ghost danger" data-a="themeReset">Tout réinitialiser</button></div>
-    </div>`;
+    </div></div>`;
   });
+  sh.el.classList.add("lsheet");
+  sh.after = () => { const sc = sh.el.querySelector(".look-scroll"); if (sc) sc.scrollTop = sh.y || 0; };
+  sh.after();
   sh.start = start;
   ui.lookSh = sh;
   sh.onClose = () => { if (ui.lookSh === sh) ui.lookSh = null; };
@@ -1615,11 +1620,12 @@ function closeAllSheets() {
 }
 window.addEventListener("popstate", () => { if (ignorePop) { ignorePop = false; return; } if (sheets.length) closeTopSheet(); });
 function swipeToClose(el) {
-  let y0 = null, dy = 0;
-  el.addEventListener("touchstart", e => { if (el.scrollTop <= 0) { y0 = e.touches[0].clientY; dy = 0; } else y0 = null; }, { passive: true });
+  let y0 = null, dy = 0, inner = null;
+  const atTop = () => el.scrollTop <= 0 && !(inner && inner.scrollTop > 0);   // zone défilante interne (ex. Apparence)
+  el.addEventListener("touchstart", e => { inner = e.target.closest?.(".iscroll") || null; if (atTop()) { y0 = e.touches[0].clientY; dy = 0; } else y0 = null; }, { passive: true });
   el.addEventListener("touchmove", e => {
     if (y0 === null) return; dy = e.touches[0].clientY - y0;
-    if (dy > 0 && el.scrollTop <= 0) { el.style.transition = "none"; el.style.transform = `translateY(${dy}px)`; } else { y0 = null; el.style.transform = ""; }
+    if (dy > 0 && atTop()) { el.style.transition = "none"; el.style.transform = `translateY(${dy}px)`; } else { y0 = null; el.style.transform = ""; }
   }, { passive: true });
   el.addEventListener("touchend", () => {
     el.style.transition = ""; el.style.transform = "";
