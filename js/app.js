@@ -83,7 +83,7 @@ const pimg = (path, alt, size = "w342") => path
 // ═════════════ État UI + caches de détails ═════════════
 const ui = { tab: "series", seriesFilter: "watching", sugSeg: "movie", sug: {}, movieSeg: "watchlist", seriesView: (() => { try { return localStorage.getItem("bobine:sview") || "grid"; } catch { return "grid"; } })(), q: "", pushStatus: null, mode: null };
 ui.nospoil = (() => { try { return localStorage.getItem("bobine:nospoil") === "1"; } catch { return false; } })();
-const APP_V = "v41";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
+const APP_V = "v42";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
 const ADMINS = ["gael.bodevin@gmail.com", "bluecellproduction@gmail.com", "fast.and.spermious@gmail.com"];
 const isAdmin = () => ADMINS.includes((store.data.user?.email || "").toLowerCase());
 
@@ -1521,7 +1521,7 @@ function openLook() {
       <button class="iconbtn" data-a="tabMove" data-v="${dom}:${k}:-1" aria-label="Monter" ${i === 0 ? "disabled" : ""}>${I.cu}</button>
       <button class="iconbtn" data-a="tabMove" data-v="${dom}:${k}:1" aria-label="Descendre" ${i === list.length - 1 ? "disabled" : ""}>${I.cd}</button></div>`).join("");
     // Aperçu figé en haut ; seuls les réglages défilent en dessous (rien ne passe derrière l'aperçu)
-    return `<div class="look"><div class="look-head"><h2>Apparence</h2><div class="lp-wrap"><span class="lp-tag">${I.eye}Aperçu en direct</span>${lookPreview()}</div></div>
+    return `<div class="look"><div class="look-head"><h2>Apparence</h2><div class="lp-wrap"><span class="lp-tag">${I.eye}Aperçu</span>${lookPreview()}</div></div>
       <div class="look-scroll iscroll">
       ${P ? "" : `<div class="info" style="margin-top:12px">${I.lock}<div>Thèmes, couleurs, coins, barre et presets font partie de Premium. L'ordre des onglets est libre pour tous. <button class="linkbtn" data-a="paywall" data-v="theme">Découvrir Premium</button></div></div>`}
       <div class="card"><h3>Thèmes</h3><div class="swatches">${Object.entries(THEMES).map(([k, t]) => swatchHtml(t, cur.bg === t.bg && cur.band === t.band && cur.ac === t.ac && !cur.tx, `data-a="theme" data-v="${k}" title="${t.name}"`)).join("")}</div></div>
