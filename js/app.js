@@ -46,6 +46,9 @@ const I = {
   pad: svg('<path d="M7 8h10a4.5 4.5 0 014.4 5.4l-.8 3.6a2.4 2.4 0 01-4.2 1L14.6 16H9.4l-1.8 2a2.4 2.4 0 01-4.2-1l-.8-3.6A4.5 4.5 0 017 8z"/><path d="M8 11v3M6.5 12.5h3"/><circle cx="15.5" cy="12" r=".9" fill="currentColor"/><circle cx="17.3" cy="13.8" r=".9" fill="currentColor"/>'),
   spark: svg('<path d="M12 3l2.2 5.8L20 11l-5.8 2.2L12 19l-2.2-5.8L4 11l5.8-2.2z"/>'),
   ff: svg('<path d="M4 6.5l7.5 5.5L4 17.5zM12.5 6.5L20 12l-7.5 5.5z"/>'),
+  cu: svg('<path d="M6 15l6-6 6 6"/>'),
+  cd: svg('<path d="M6 9l6 6 6-6"/>'),
+  undo: svg('<path d="M9 7L4.5 11.5 9 16"/><path d="M5 11.5h9a5 5 0 010 10h-2"/>'),
 };
 
 const DAY = 864e5;
@@ -80,7 +83,7 @@ const pimg = (path, alt, size = "w342") => path
 // ═════════════ État UI + caches de détails ═════════════
 const ui = { tab: "series", seriesFilter: "watching", sugSeg: "movie", sug: {}, movieSeg: "watchlist", seriesView: (() => { try { return localStorage.getItem("bobine:sview") || "grid"; } catch { return "grid"; } })(), q: "", pushStatus: null, mode: null };
 ui.nospoil = (() => { try { return localStorage.getItem("bobine:nospoil") === "1"; } catch { return false; } })();
-const APP_V = "v35";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
+const APP_V = "v36";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
 const ADMINS = ["gael.bodevin@gmail.com", "bluecellproduction@gmail.com", "fast.and.spermious@gmail.com"];
 const isAdmin = () => ADMINS.includes((store.data.user?.email || "").toLowerCase());
 
@@ -305,11 +308,27 @@ const TABS = [...AV_TABS, ...G_TABS];
 function loadDomains() { try { const d = JSON.parse(localStorage.getItem("bobine:domains") || "null"); if (d && (d.av || d.games)) return d; } catch { } return { av: true, games: true }; }
 ui.domains = loadDomains();
 ui.domain = (() => { try { return localStorage.getItem("bobine:domain") || "av"; } catch { return "av"; } })();
-ui.lastTab = { av: "series", games: "games" };
+// Ordre des onglets choisi par l'utilisateur (Apparence) ; le premier s'ouvre au lancement
+ui.tabOrder = (() => { try { const o = JSON.parse(localStorage.getItem("bobine:taborder") || "null"); return o && typeof o === "object" ? o : {}; } catch { return {}; } })();
+function ordered(list, dom) {
+  const o = ui.tabOrder[dom]; if (!Array.isArray(o)) return list;
+  const r = o.map(k => list.find(t => t[0] === k)).filter(Boolean);
+  return [...r, ...list.filter(t => !r.includes(t))];
+}
+const avTabs = () => ordered(AV_TABS, "av"), gTabs = () => ordered(G_TABS, "games");
+function moveTab(dom, k, d) {
+  const list = (dom === "games" ? gTabs() : avTabs()).map(t => t[0]);
+  const i = list.indexOf(k), j = i + d;
+  if (i < 0 || j < 0 || j >= list.length) return;
+  [list[i], list[j]] = [list[j], list[i]];
+  ui.tabOrder = { ...ui.tabOrder, [dom]: list };
+  try { localStorage.setItem("bobine:taborder", JSON.stringify(ui.tabOrder)); } catch { }
+}
+ui.lastTab = { av: avTabs()[0][0], games: gTabs()[0][0] };
 const domainOf = tab => G_TABS.some(t => t[0] === tab) ? "games" : "av";
 function fixDomain() { if (!ui.domains[ui.domain]) ui.domain = ui.domains.av ? "av" : "games"; }
 fixDomain();
-const curTabs = () => ui.domain === "games" ? G_TABS : AV_TABS;
+const curTabs = () => ui.domain === "games" ? gTabs() : avTabs();
 function renderTabs(badge = 0) {
   patch($("#tabs"), curTabs().map(([k, l, ic]) =>
     `<button data-a="tab" data-v="${k}" class="${ui.tab === k ? "on" : ""}">${ic}${l}${k === "games" && unseenGames() ? `<i class="dot">${unseenGames()}</i>` : ""}</button>`).join(""));
@@ -899,7 +918,7 @@ function premiumCard() {
 const PERKS = [
   ["push", I.bell, "Notifications", "Nouvel épisode, sortie ciné/VOD d'un film de ta liste, sortie d'un jeu attendu."],
   ["stats", I.spark, "Statistiques avancées", "Récap de l'année, temps passé, genres, chaînes, décennies, notes, top séries."],
-  ["theme", I.star, "Thèmes & couleurs", "7 thèmes et réglage libre du fond, des bandeaux et de l'accent."],
+  ["theme", I.star, "Thèmes & apparence", "7 thèmes, couleurs libres (fond, cartes, texte, accent), coins, barre d'onglets et presets enregistrés."],
   ["import", I.up, "Import d'historique", "Reprends tout depuis TV Time, Binge Boxd ou une sauvegarde."],
   ["calendar", I.cal, "Calendrier abonnable", "Les sorties de tes séries, films et jeux dans le calendrier de ton iPhone ou Google Agenda."],
   ["recap", I.spark, "Ta rétro de l'année", "Ton année en séries, films et jeux, en image à partager."]
@@ -1397,35 +1416,111 @@ const hex2rgb = h => { h = h.replace("#", ""); return [0, 2, 4].map(i => parseIn
 const rgb2hex = a => "#" + a.map(x => Math.max(0, Math.min(255, Math.round(x))).toString(16).padStart(2, "0")).join("");
 const mix = (a, b, t) => rgb2hex(hex2rgb(a).map((x, i) => x + (hex2rgb(b)[i] - x) * t));
 const lum = h => { const [r, g, b] = hex2rgb(h).map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }); return .2126 * r + .7152 * g + .0722 * b; };
+// Un thème = { bg, band, ac, tx? (texte, auto si absent), radius: round|soft|square, bar: glass|clear|solid }
+const RADII = [["round", "Arrondis"], ["soft", "Légers"], ["square", "Carrés"]];
+const BARS = [["glass", "Translucide"], ["clear", "Transparente"], ["solid", "Opaque"]];
 function getTheme() { try { return JSON.parse(localStorage.getItem("bobine:theme") || "null"); } catch { return null; } }
+const curTheme = () => getTheme() || { ...THEMES.nuit };
+const autoTx = t => lum(t.bg) > .4 ? "#16161a" : "#f3f3f6";
+const sameLook = (a, b) => !!a && !!b && a.bg === b.bg && a.band === b.band && a.ac === b.ac && (a.tx || "") === (b.tx || "") && (a.radius || "round") === (b.radius || "round") && (a.bar || "glass") === (b.bar || "glass");
 function applyTheme(t, save) {
-  const r = document.documentElement.style;
+  const de = document.documentElement, r = de.style;
   if (save) { try { t ? localStorage.setItem("bobine:theme", JSON.stringify(t)) : localStorage.removeItem("bobine:theme"); } catch { } }
-  if (!t) { ["--bg", "--s1", "--s2", "--s3", "--bar", "--line", "--tx", "--mu", "--mu2", "--ac", "--ac-tx"].forEach(k => r.removeProperty(k)); document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#0d0d11"); return; }
+  de.classList.remove("rad-soft", "rad-square", "bar-clear", "bar-solid");
+  if (t?.radius && t.radius !== "round") de.classList.add("rad-" + t.radius);
+  if (t?.bar && t.bar !== "glass") de.classList.add("bar-" + t.bar);
+  if (!t?.bg) { ["--bg", "--s1", "--s2", "--s3", "--bar", "--line", "--tx", "--mu", "--mu2", "--ac", "--ac-tx"].forEach(k => r.removeProperty(k)); r.colorScheme = ""; document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#0d0d11"); return; }
   const light = lum(t.bg) > .4;
   const ink = light ? "#111111" : "#ffffff";
   r.setProperty("--bg", t.bg);
   r.setProperty("--s1", t.band);
-  r.setProperty("--s2", mix(t.band, ink, light ? .06 : .06));
+  r.setProperty("--s2", mix(t.band, ink, .06));
   r.setProperty("--s3", mix(t.band, ink, light ? .14 : .13));
-  r.setProperty("--bar", t.band + "eb");
+  r.setProperty("--bar", t.band + (t.bar === "clear" ? "8c" : "eb"));
   r.setProperty("--line", light ? "#0000001a" : "#ffffff14");
-  r.setProperty("--tx", light ? "#16161a" : "#f3f3f6");
-  r.setProperty("--mu", light ? "#5d5d68" : "#9b9bab");
-  r.setProperty("--mu2", light ? "#85858f" : "#6d6d7c");
+  if (t.tx) {
+    r.setProperty("--tx", t.tx);
+    r.setProperty("--mu", mix(t.tx, t.band, .35));
+    r.setProperty("--mu2", mix(t.tx, t.band, .52));
+  } else {
+    r.setProperty("--tx", autoTx(t));
+    r.setProperty("--mu", light ? "#5d5d68" : "#9b9bab");
+    r.setProperty("--mu2", light ? "#85858f" : "#6d6d7c");
+  }
   r.setProperty("--ac", t.ac);
   r.setProperty("--ac-tx", lum(t.ac) > .45 ? "#1a1400" : "#ffffff");
-  document.documentElement.style.colorScheme = light ? "light" : "dark";
+  r.colorScheme = light ? "light" : "dark";
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", t.bg);
 }
+// Presets personnels (sur cet appareil)
+function getPresets() { try { const a = JSON.parse(localStorage.getItem("bobine:presets") || "[]"); return Array.isArray(a) ? a.filter(p => p && p.bg) : []; } catch { return []; } }
+function setPresets(a) { try { localStorage.setItem("bobine:presets", JSON.stringify(a.slice(0, 12))); } catch { } }
+const swatchHtml = (t, on, attrs, tag = "button") => `<${tag} class="swatch ${on ? "on" : ""}" ${attrs} style="background:${t.bg}"><i style="background:${t.band};border-top:3px solid ${t.ac}"></i>${t.tx ? `<b style="color:${t.tx}">Aa</b>` : ""}</${tag}>`;
 function themeCard() {
-  const cur = getTheme() || THEMES.nuit;
-  const sw = Object.entries(THEMES).map(([k, t]) => `<button class="swatch ${cur.bg === t.bg && cur.band === t.band && cur.ac === t.ac ? "on" : ""}" data-a="theme" data-v="${k}" title="${t.name}" style="background:${t.bg}"><i style="background:${t.band};border-top:3px solid ${t.ac}"></i></button>`).join("");
-  return `<h3>Apparence${premium.isPremium() ? "" : lockTag()}</h3><p>Choisis un thème ou règle tes couleurs.</p><div class="swatches">${sw}</div>
-    <label class="colrow"><span>Fond</span><input type="color" data-c="bg" value="${cur.bg}" ${premium.isPremium() ? "" : "disabled"}></label>
-    <label class="colrow"><span>Bandeaux et cartes</span><input type="color" data-c="band" value="${cur.band}" ${premium.isPremium() ? "" : "disabled"}></label>
-    <label class="colrow"><span>Couleur d'accent</span><input type="color" data-c="ac" value="${cur.ac}" ${premium.isPremium() ? "" : "disabled"}></label>
-    <button class="btn ghost" data-a="themeReset" style="width:100%;margin-top:10px">Thème par défaut</button>`;
+  const cur = curTheme();
+  const sw = Object.entries(THEMES).map(([k, t]) => swatchHtml(t, cur.bg === t.bg && cur.band === t.band && cur.ac === t.ac, `data-a="theme" data-v="${k}" title="${t.name}"`)).join("");
+  return `<h3>Apparence${premium.isPremium() ? "" : lockTag()}</h3><p>Thèmes, couleurs du texte, presets, coins, barre et ordre des onglets, avec aperçu en direct.</p><div class="swatches">${sw}</div>
+    <button class="btn pri" data-a="look" style="width:100%">${I.edit}Personnaliser l'apparence</button>`;
+}
+
+// ── Fenêtre Apparence (aperçu en direct) ──
+const LP_ART = ["linear-gradient(150deg,#ff7a59,#a02bd6)", "linear-gradient(150deg,#2ec5ff,#1b3fb8)", "linear-gradient(150deg,#ffd166,#ef476f)", "linear-gradient(150deg,#06d6a0,#118ab2)", "linear-gradient(150deg,#f78fb3,#574b90)"];
+function lookPreview() {
+  const tabs = (ui.domain === "games" && ui.domains.games) || !ui.domains.av ? gTabs() : avTabs();
+  return `<div class="lprev" aria-hidden="true"><div class="lp-app">
+    <div class="lp-top"><b>${esc(tabs[0][1])}</b><span>3 à voir</span></div>
+    <div class="up"><div class="th" style="background:${LP_ART[1]}"><span class="new">NOUVEL ÉP.</span></div>
+      <div class="tx"><div class="n">Ma série préférée</div><div class="e">S02E05 · Le retour</div><div class="m">Il y a 2 jours</div><div class="bar"><i style="width:62%"></i></div></div>
+      <span class="chk">${I.check}</span></div>
+    <div class="lp-chips"><span class="chip on">Tout</span><span class="chip">En cours</span><span class="chip">Plus tard</span></div>
+    <div class="lp-posters">${LP_ART.map(g => `<i style="background:${g}"></i>`).join("")}</div>
+    <nav class="lp-tabs">${tabs.map(([k, l, ic], i) => `<span class="${i ? "" : "on"}">${ic}${l}</span>`).join("")}</nav>
+  </div></div>`;
+}
+function openLook() {
+  const start = { theme: getTheme(), order: JSON.stringify(ui.tabOrder) };
+  const sh = openSheet(sh => {
+    const cur = curTheme(), P = premium.isPremium(), dis = P ? "" : "disabled";
+    const presets = getPresets();
+    const changed = JSON.stringify(getTheme()) !== JSON.stringify(start.theme) || JSON.stringify(ui.tabOrder) !== start.order;
+    const seg = (list, key, act) => `<div class="seg lseg">${list.map(([k, l]) => `<button data-a="${act}" data-v="${k}" class="${(cur[key] || list[0][0]) === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
+    const tabRows = (dom, list) => list.map(([k, l, ic], i) => `<div class="trow">${ic}<span>${l}${i === 0 ? ` <small>au lancement</small>` : ""}</span>
+      <button class="iconbtn" data-a="tabMove" data-v="${dom}:${k}:-1" aria-label="Monter" ${i === 0 ? "disabled" : ""}>${I.cu}</button>
+      <button class="iconbtn" data-a="tabMove" data-v="${dom}:${k}:1" aria-label="Descendre" ${i === list.length - 1 ? "disabled" : ""}>${I.cd}</button></div>`).join("");
+    return `<div class="body look"><h2 style="margin:8px 0 12px">Apparence</h2>
+      ${lookPreview()}
+      ${P ? "" : `<div class="info" style="margin-top:12px">${I.lock}<div>Thèmes, couleurs, coins, barre et presets font partie de Premium. L'ordre des onglets est libre pour tous. <button class="linkbtn" data-a="paywall" data-v="theme">Découvrir Premium</button></div></div>`}
+      <div class="card"><h3>Thèmes</h3><div class="swatches">${Object.entries(THEMES).map(([k, t]) => swatchHtml(t, cur.bg === t.bg && cur.band === t.band && cur.ac === t.ac && !cur.tx, `data-a="theme" data-v="${k}" title="${t.name}"`)).join("")}</div></div>
+      <div class="card"><h3>Mes presets</h3>
+        ${presets.length ? `<div class="psets">${presets.map((p, i) => `<div class="pset ${sameLook(p, cur) ? "on" : ""}"><button class="psw" data-a="presetUse" data-v="${i}">${swatchHtml(p, false, "", "span")}<span>${esc(p.name)}</span></button><button class="iconbtn" data-a="presetDel" data-v="${i}" aria-label="Supprimer ${esc(p.name)}">${I.trash}</button></div>`).join("")}</div>`
+          : `<p>Enregistre tes réglages actuels (couleurs, texte, coins, barre) pour y revenir en un geste.</p>`}
+        <div class="psave"><input class="field" id="pname" maxlength="24" placeholder="Nom du preset" autocomplete="off" ${dis}><button class="btn pri" data-a="presetSave" ${presets.length >= 12 ? "disabled" : ""}>${I.plus}Enregistrer</button></div>
+        ${presets.length >= 12 ? `<p style="margin:6px 0 0">12 presets maximum : supprimes-en un pour en ajouter.</p>` : ""}</div>
+      <div class="card"><h3>Couleurs</h3>
+        <label class="colrow"><span>Fond</span><input type="color" data-c="bg" value="${cur.bg}" ${dis}></label>
+        <label class="colrow"><span>Bandeaux et cartes</span><input type="color" data-c="band" value="${cur.band}" ${dis}></label>
+        <div class="colrow"><span>Texte${cur.tx ? "" : ` <small>auto</small>`}</span><span class="colpair">${cur.tx ? `<button class="linkbtn" data-a="txAuto">Auto</button>` : ""}<input type="color" data-c="tx" value="${cur.tx || autoTx(cur)}" aria-label="Couleur du texte" ${dis}></span></div>
+        <label class="colrow"><span>Accent</span><input type="color" data-c="ac" value="${cur.ac}" ${dis}></label>
+        ${cur.tx && Math.abs(lum(cur.tx) - lum(cur.bg)) < .25 ? `<p class="warn">Texte peu lisible sur ce fond : choisis une couleur plus contrastée.</p>` : ""}</div>
+      <div class="card"><h3>Coins</h3>${seg(RADII, "radius", "lookRad")}
+        <h3 style="margin-top:14px">Barre d'onglets</h3>${seg(BARS, "bar", "lookBar")}</div>
+      <div class="card"><h3>Ordre des onglets</h3><p>Le premier s'ouvre au lancement de l'app.</p>
+        ${ui.domains.av ? `${ui.domains.games ? `<div class="tdom">Films & séries</div>` : ""}${tabRows("av", avTabs())}` : ""}
+        ${ui.domains.games ? `${ui.domains.av ? `<div class="tdom">Jeux vidéo</div>` : ""}${tabRows("games", gTabs())}` : ""}
+        ${Object.keys(ui.tabOrder).length ? `<button class="linkbtn" data-a="tabReset" style="margin-top:8px">Ordre par défaut</button>` : ""}</div>
+      <div class="btns">${changed ? `<button class="btn ghost" data-a="lookUndo">${I.undo}Annuler mes changements</button>` : ""}<button class="btn ghost danger" data-a="themeReset">Tout réinitialiser</button></div>
+    </div>`;
+  });
+  sh.start = start;
+  ui.lookSh = sh;
+  sh.onClose = () => { if (ui.lookSh === sh) ui.lookSh = null; };
+}
+const lookRefresh = () => { ui.lookSh?.refresh(); renderView(true); };
+function setLook(patch) {
+  if (!premium.isPremium()) return openPaywall("theme");
+  const t = { ...curTheme(), ...patch }; delete t.name;
+  for (const k of Object.keys(t)) if (t[k] == null) delete t[k];
+  applyTheme(t, true); lookRefresh();
 }
 // Heures de jeu (fiche jeu) : enregistrées à la sortie du champ
 document.addEventListener("change", e => {
@@ -1450,9 +1545,11 @@ document.addEventListener("input", e => {
   }
   const k = e.target?.dataset?.c; if (!k) return;
   if (!premium.isPremium()) return openPaywall("theme");
-  const t = { ...(getTheme() || THEMES.nuit) }; t[k] = e.target.value; delete t.name;
-  applyTheme(t, true);
+  const t = curTheme(); t[k] = e.target.value; delete t.name;
+  applyTheme(t, true);   // aperçu en direct : les variables CSS changent, la fenêtre n'est pas reconstruite
 });
+// Sélecteur de couleur refermé → mise à jour des pastilles, presets et avertissements
+document.addEventListener("change", e => { if (e.target?.dataset?.c && ui.lookSh) ui.lookSh.refresh(); });
 applyTheme(getTheme());
 
 // ═════════════ Feuilles (fiches) ═════════════
@@ -1476,6 +1573,7 @@ function openSheet(build) {
 }
 function closeTopSheet() {
   const sh = sheets.pop(); if (!sh) return;
+  sh.onClose?.();
   sh.el.classList.remove("in");
   setTimeout(() => sh.el.remove(), 330);
   if (!sheets.length) { document.body.style.overflow = ""; if (ui.dirty || held) { ui.dirty = false; renderView(true); } }
@@ -1737,8 +1835,49 @@ const A = {
   lmore: el => loadMoreLatest(el.dataset.v),
   dseg: el => { ui.dseg = el.dataset.v; try { localStorage.setItem("bobine:dseg", ui.dseg); } catch { } loadLatest(ui.dseg); renderResults(); window.scrollTo(0, 0); },
   sugseg: el => { ui.sugSeg = el.dataset.v; loadSug(ui.sugSeg); renderResults(); },
-  theme: el => { if (!premium.isPremium() && el.dataset.v !== "nuit") return openPaywall("theme"); applyTheme({ ...THEMES[el.dataset.v] }, true); renderView(true); },
-  themeReset: () => { applyTheme(null, true); renderView(true); },
+  theme: el => {
+    if (!premium.isPremium() && el.dataset.v !== "nuit") return openPaywall("theme");
+    const cur = getTheme() || {}, t = { ...THEMES[el.dataset.v] }; delete t.name;
+    if (cur.radius) t.radius = cur.radius;   // un thème change les couleurs, pas les coins ni la barre
+    if (cur.bar) t.bar = cur.bar;
+    applyTheme(t, true); lookRefresh();
+  },
+  themeReset: () => {
+    if (!confirm("Remettre l'apparence par défaut (couleurs, texte, coins, barre et ordre des onglets) ? Tes presets sont conservés.")) return;
+    applyTheme(null, true);
+    ui.tabOrder = {}; try { localStorage.removeItem("bobine:taborder"); } catch { }
+    lookRefresh();
+  },
+  look: () => openLook(),
+  lookRad: el => setLook({ radius: el.dataset.v === "round" ? null : el.dataset.v }),
+  lookBar: el => setLook({ bar: el.dataset.v === "glass" ? null : el.dataset.v }),
+  txAuto: () => setLook({ tx: null }),
+  lookUndo: () => {
+    const s = ui.lookSh?.start; if (!s) return;
+    applyTheme(s.theme, true);
+    ui.tabOrder = JSON.parse(s.order); try { localStorage.setItem("bobine:taborder", s.order); } catch { }
+    lookRefresh(); toast("Changements annulés");
+  },
+  tabMove: el => { const [dom, k, d] = el.dataset.v.split(":"); moveTab(dom, k, +d); lookRefresh(); },
+  tabReset: () => { ui.tabOrder = {}; try { localStorage.removeItem("bobine:taborder"); } catch { } lookRefresh(); },
+  presetSave: () => {
+    if (!premium.isPremium()) return openPaywall("theme");
+    const list = getPresets(), cur = curTheme(); delete cur.name;
+    const name = ($("#pname")?.value || "").trim().slice(0, 24) || `Mon thème ${list.length + 1}`;
+    const i = list.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
+    if (i >= 0) list[i] = { ...cur, name }; else if (list.length >= 12) return toast("12 presets maximum"); else list.push({ ...cur, name });
+    setPresets(list); ui.lookSh?.refresh(); toast(i >= 0 ? `Preset « ${name} » mis à jour` : `Preset « ${name} » enregistré`);
+  },
+  presetUse: el => {
+    if (!premium.isPremium()) return openPaywall("theme");
+    const p = getPresets()[+el.dataset.v]; if (!p) return;
+    const t = { ...p }; delete t.name; applyTheme(t, true); lookRefresh();
+  },
+  presetDel: el => {
+    const list = getPresets(), i = +el.dataset.v, p = list[i]; if (!p) return;
+    list.splice(i, 1); setPresets(list); ui.lookSh?.refresh();
+    toast(`Preset « ${p.name} » supprimé`, "Annuler", () => { const l = getPresets(); l.splice(i, 0, p); setPresets(l); ui.lookSh?.refresh(); });
+  },
   paywall: el => openPaywall(el.dataset.v),
   async buyPremium(el) {
     el.disabled = true; const t = el.innerHTML; el.textContent = "…";
