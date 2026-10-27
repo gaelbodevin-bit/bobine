@@ -478,3 +478,13 @@ html.bar-clear :is(#tabs,.lp-tabs){backdrop-filter:blur(10px) saturate(1.6);-web
 .tdom{font-size:12px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.06em;margin:12px 0 2px}
 .look .btns{flex-direction:column}
 .look .btns .btn{flex:none}
+.pset.edit{border-color:var(--ac);background:var(--s3)}
+.psw span small{display:block;font-size:11.5px;font-weight:600;color:var(--ac);margin-top:1px}
+.pset .iconbtn{width:34px;height:34px;flex:none}
+.pset .iconbtn svg{width:17px;height:17px}
+.pset .iconbtn.del{color:var(--bad)}
+.card p svg.inl{width:14px;height:14px;vertical-align:-2px;margin:0;color:var(--mu)}
+.pedit{display:flex;gap:8px;align-items:flex-start;font-size:13px;color:var(--mu);margin:0 0 10px}
+.pedit svg{width:16px;height:16px;flex:none;color:var(--ac);margin-top:1px}
+.pacts{display:flex;justify-content:space-between;gap:10px}
+.pacts .linkbtn{width:auto;margin-top:10px}
