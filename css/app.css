@@ -410,3 +410,10 @@ body.kb #tabs{display:none}
 .hours input{width:78px;background:var(--s2);border:1px solid var(--s3);border-radius:9px;padding:7px 8px;font-size:16px;text-align:right;color:var(--tx);font-variant-numeric:tabular-nums}
 .hours input:focus{outline:none;border-color:var(--ac)}
 .hours b{color:var(--mu);font-weight:600}
+/* Découvrir : onglets Sélection / Animés / Séries / Films et grilles des dernières sorties */
+.seg.dseg{margin:0 0 12px}
+.seg.dseg button{padding:8px 2px;font-size:13.5px}
+.lday{display:flex;align-items:baseline;gap:8px;font-size:15px;margin:18px 0 10px}
+.lday span{font-size:12px;color:var(--mu);font-weight:600}
+.agrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px 10px}
+.agrid .ac{width:auto}
