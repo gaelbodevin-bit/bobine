@@ -488,3 +488,13 @@ html.bar-clear :is(#tabs,.lp-tabs){backdrop-filter:blur(10px) saturate(1.6);-web
 .pedit svg{width:16px;height:16px;flex:none;color:var(--ac);margin-top:1px}
 .pacts{display:flex;justify-content:space-between;gap:10px}
 .pacts .linkbtn{width:auto;margin-top:10px}
+/* Pastilles de couleur : cadre damier + bordure contrastée pour rester visibles sur une carte de la même couleur */
+.cpick{position:relative;display:block;width:54px;height:36px;border-radius:10px;padding:3px;background:repeating-conic-gradient(#808080 0 25%,#c8c8c8 0 50%) 0 0/10px 10px;box-shadow:0 0 0 2px var(--tx),0 0 0 4px var(--s1);cursor:pointer;flex:none}
+.cpick::after{content:"";position:absolute;inset:3px;border-radius:7px;background:var(--c);box-shadow:inset 0 0 0 1px #0000004d,inset 0 0 0 2px #ffffff40;pointer-events:none}
+.cpick input[type=color]{position:absolute;inset:0;width:100%;height:100%;opacity:0;border:0;padding:0;cursor:pointer}
+.cpick:has(input:disabled){opacity:.45}
+.colpair code.hex{font:600 12.5px/1 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--mu);letter-spacing:.02em}
+.lp-wrap{position:relative;padding-top:6px}
+.lp-tag{position:absolute;top:-4px;left:50%;transform:translateX(-50%);z-index:3;display:flex;align-items:center;gap:5px;white-space:nowrap;background:var(--ac);color:var(--ac-tx);font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:3px 10px;border-radius:99px;box-shadow:0 0 0 3px var(--bg)}
+.lp-tag svg{width:13px;height:13px}
+html:is(.rad-square,.rad-soft) body .lp-tag:not(#_){border-radius:99px!important}
