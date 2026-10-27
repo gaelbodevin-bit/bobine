@@ -83,7 +83,7 @@ const pimg = (path, alt, size = "w342") => path
 // ═════════════ État UI + caches de détails ═════════════
 const ui = { tab: "series", seriesFilter: "watching", sugSeg: "movie", sug: {}, movieSeg: "watchlist", seriesView: (() => { try { return localStorage.getItem("bobine:sview") || "grid"; } catch { return "grid"; } })(), q: "", pushStatus: null, mode: null };
 ui.nospoil = (() => { try { return localStorage.getItem("bobine:nospoil") === "1"; } catch { return false; } })();
-const APP_V = "v36";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
+const APP_V = "v37";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
 const ADMINS = ["gael.bodevin@gmail.com", "bluecellproduction@gmail.com", "fast.and.spermious@gmail.com"];
 const isAdmin = () => ADMINS.includes((store.data.user?.email || "").toLowerCase());
 
@@ -1452,9 +1452,38 @@ function applyTheme(t, save) {
   r.colorScheme = light ? "light" : "dark";
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", t.bg);
 }
-// Presets personnels (sur cet appareil)
-function getPresets() { try { const a = JSON.parse(localStorage.getItem("bobine:presets") || "[]"); return Array.isArray(a) ? a.filter(p => p && p.bg) : []; } catch { return []; } }
-function setPresets(a) { try { localStorage.setItem("bobine:presets", JSON.stringify(a.slice(0, 12))); } catch { } }
+// Presets personnels : liés au compte (users/{uid}.presets), avec copie locale pour l'ouverture hors ligne
+const HEX6 = /^#[0-9a-f]{6}$/i;
+function cleanPreset(p) {
+  if (!p || !HEX6.test(p.bg) || !HEX6.test(p.band) || !HEX6.test(p.ac)) return null;
+  const o = { name: String(p.name || "Mon thème").slice(0, 24), bg: p.bg, band: p.band, ac: p.ac };
+  if (HEX6.test(p.tx || "")) o.tx = p.tx;
+  if (p.radius === "soft" || p.radius === "square") o.radius = p.radius;
+  if (p.bar === "clear" || p.bar === "solid") o.bar = p.bar;
+  return o;
+}
+const presetKey = () => "bobine:presets:" + (store.data.user?.uid || "local");
+function getPresets() { try { const a = JSON.parse(localStorage.getItem(presetKey()) || "[]"); return Array.isArray(a) ? a.map(cleanPreset).filter(Boolean) : []; } catch { return []; } }
+function setPresets(a, fromServer) {
+  const list = a.map(cleanPreset).filter(Boolean).slice(0, 12);
+  try { localStorage.setItem(presetKey(), JSON.stringify(list)); } catch { }
+  if (!fromServer) store.setUserDoc({ presets: list, presetsAt: Date.now() }).catch(e => logError(e, "presets"));
+}
+// Au démarrage : le compte fait foi ; s'il n'a encore rien, on y envoie les presets de cet appareil
+function syncPresets(d) {
+  let legacy = null;
+  try { legacy = JSON.parse(localStorage.getItem("bobine:presets") || "null"); localStorage.removeItem("bobine:presets"); } catch { }
+  legacy = Array.isArray(legacy) ? legacy.map(cleanPreset).filter(Boolean) : [];
+  if (Array.isArray(d?.presets)) {
+    const srv = d.presets.map(cleanPreset).filter(Boolean);
+    const extra = legacy.filter(p => !srv.some(q => q.name.toLowerCase() === p.name.toLowerCase()));
+    extra.length ? setPresets([...srv, ...extra]) : setPresets(srv, true);
+  } else {
+    const local = getPresets(), up = [...local, ...legacy.filter(p => !local.some(q => q.name.toLowerCase() === p.name.toLowerCase()))];
+    if (up.length) setPresets(up);
+  }
+  ui.lookSh?.refresh();
+}
 const swatchHtml = (t, on, attrs, tag = "button") => `<${tag} class="swatch ${on ? "on" : ""}" ${attrs} style="background:${t.bg}"><i style="background:${t.band};border-top:3px solid ${t.ac}"></i>${t.tx ? `<b style="color:${t.tx}">Aa</b>` : ""}</${tag}>`;
 function themeCard() {
   const cur = curTheme();
@@ -1493,7 +1522,7 @@ function openLook() {
       <div class="card"><h3>Thèmes</h3><div class="swatches">${Object.entries(THEMES).map(([k, t]) => swatchHtml(t, cur.bg === t.bg && cur.band === t.band && cur.ac === t.ac && !cur.tx, `data-a="theme" data-v="${k}" title="${t.name}"`)).join("")}</div></div>
       <div class="card"><h3>Mes presets</h3>
         ${presets.length ? `<div class="psets">${presets.map((p, i) => `<div class="pset ${sameLook(p, cur) ? "on" : ""}"><button class="psw" data-a="presetUse" data-v="${i}">${swatchHtml(p, false, "", "span")}<span>${esc(p.name)}</span></button><button class="iconbtn" data-a="presetDel" data-v="${i}" aria-label="Supprimer ${esc(p.name)}">${I.trash}</button></div>`).join("")}</div>`
-          : `<p>Enregistre tes réglages actuels (couleurs, texte, coins, barre) pour y revenir en un geste.</p>`}
+          : `<p>Enregistre tes réglages actuels (couleurs, texte, coins, barre) pour y revenir en un geste, sur tous tes appareils.</p>`}
         <div class="psave"><input class="field" id="pname" maxlength="24" placeholder="Nom du preset" autocomplete="off" ${dis}><button class="btn pri" data-a="presetSave" ${presets.length >= 12 ? "disabled" : ""}>${I.plus}Enregistrer</button></div>
         ${presets.length >= 12 ? `<p style="margin:6px 0 0">12 presets maximum : supprimes-en un pour en ajouter.</p>` : ""}</div>
       <div class="card"><h3>Couleurs</h3>
@@ -2255,7 +2284,7 @@ async function startApp() {
   if (!pushDone) pushP.then(quietRender);
   push.refresh();
   // Préférences liées au compte (mode sans spoiler choisi sur un autre appareil, calendrier)
-  store.getUserDoc().then(d => { ui.userDoc = d; if (typeof d.nospoil === "boolean" && d.nospoil !== ui.nospoil) setNoSpoil(d.nospoil, true); }).catch(() => { });
+  store.getUserDoc().then(d => { ui.userDoc = d; if (typeof d.nospoil === "boolean" && d.nospoil !== ui.nospoil) setNoSpoil(d.nospoil, true); syncPresets(d); }).catch(() => { });
 }
 
 async function boot() {
