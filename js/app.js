@@ -80,7 +80,7 @@ const pimg = (path, alt, size = "w342") => path
 // ═════════════ État UI + caches de détails ═════════════
 const ui = { tab: "series", seriesFilter: "watching", sugSeg: "movie", sug: {}, movieSeg: "watchlist", seriesView: (() => { try { return localStorage.getItem("bobine:sview") || "grid"; } catch { return "grid"; } })(), q: "", pushStatus: null, mode: null };
 ui.nospoil = (() => { try { return localStorage.getItem("bobine:nospoil") === "1"; } catch { return false; } })();
-const APP_V = "v34";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
+const APP_V = "v35";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
 const ADMINS = ["gael.bodevin@gmail.com", "bluecellproduction@gmail.com", "fast.and.spermious@gmail.com"];
 const isAdmin = () => ADMINS.includes((store.data.user?.email || "").toLowerCase());
 
@@ -680,20 +680,32 @@ async function loadLatest(kind) {
   const L = ui.latest[kind];
   if (L && (L === "loading" || Date.now() - L.at < 3 * 3600e3)) return;
   ui.latest[kind] = "loading";
-  try { ui.latest[kind] = { at: Date.now(), items: kind === "movie" ? await latestMovies() : await latestEps(kind) }; }
+  try { ui.latest[kind] = { at: Date.now(), win: 1, items: kind === "movie" ? await latestMovies() : await latestEps(kind, 0) }; }
   catch (e) { onErr(e); ui.latest[kind] = { at: Date.now(), items: kind === "movie" ? { vod: [], cine: [] } : [] }; }
   if (ui.tab === "discover" && ui.dseg === kind && !Array.isArray(ui.results)) renderResults();
 }
-// Épisodes sortis récemment : animés japonais (10 j) ou séries hors animation, talk-shows, info, télé-réalité, soaps (7 j)
-async function latestEps(kind) {
-  const days = kind === "anime" ? 10 : 7, td = isoToday(), from = ago(days);
+// Épisodes sortis récemment : animés japonais, ou séries (hors animation, talk-shows, info, télé-réalité, soaps).
+// Par tranches de 10 jours (3 tranches = 30 jours) : la tranche 0 au chargement, les suivantes avec « Voir plus ».
+// Chaque série n'apparaît qu'une fois, à la date de son dernier épisode sorti.
+const WIN = 10, WINS = 3;
+const winRange = w => ({ from: ago(WIN * w + WIN - 1), to: w ? ago(WIN * w) : isoToday() });
+async function latestEps(kind, w, skip = new Set()) {
+  const { from, to } = winRange(w);
   const base = kind === "anime" ? { with_genres: "16", with_original_language: "ja" } : { without_genres: "16,10763,10764,10766,10767", "vote_count.gte": "30" };
-  const pages = await Promise.all([1, 2].map(page => tmdb.get("/discover/tv", { ...base, "air_date.gte": from, "air_date.lte": td, sort_by: "popularity.desc", page }, { ttl: 3 })));
-  const seen = new Set(), list = pages.flatMap(p => p.results || []).filter(x => !seen.has(x.id) && seen.add(x.id)).slice(0, 36);
+  const pages = await Promise.all([1, 2, 3].map(page => tmdb.get("/discover/tv", { ...base, "air_date.gte": from, "air_date.lte": to, sort_by: "popularity.desc", page }, { ttl: 3 }).catch(() => ({}))));
+  const seen = new Set(skip), list = pages.flatMap(p => p.results || []).filter(x => !seen.has(x.id) && seen.add(x.id)).slice(0, 48);
   const det = await Promise.all(list.map(x => tmdb.tv(x.id).catch(() => null)));
   return det.map((t, i) => t && { id: list[i].id, pop: list[i].popularity || 0, t, la: t.last_episode_to_air })
-    .filter(x => x?.la?.air_date && x.la.air_date <= td && x.la.air_date >= from && x.la.season_number > 0)
+    .filter(x => x?.la?.air_date && x.la.air_date <= to && x.la.air_date >= from && x.la.season_number > 0)
     .sort((a, b) => a.la.air_date < b.la.air_date ? 1 : a.la.air_date > b.la.air_date ? -1 : b.pop - a.pop);
+}
+async function loadMoreLatest(kind) {
+  const L = ui.latest[kind]; if (!L || L === "loading" || L.more || L.win >= WINS) return;
+  L.more = true; renderResults();
+  try { const add = await latestEps(kind, L.win, new Set(L.items.map(x => x.id))); L.items = [...L.items, ...add]; L.win++; }
+  catch (e) { onErr(e); }
+  L.more = false;
+  if (ui.tab === "discover" && ui.dseg === kind && !Array.isArray(ui.results)) renderResults();
 }
 // Films : nouveautés VOD / streaming en France (30 j) et films à l'affiche
 async function latestMovies() {
@@ -715,12 +727,12 @@ const dayLabel = date => { const d = daysFrom(date); if (d === 0) return "Aujour
 // Carte « affiche » (comme les films) : le n° d'épisode sorti est posé sur l'affiche de la série
 function epCard(x) {
   const s = store.data.shows.get(x.id), la = x.la, hide = s && hideEp(s, la.season_number, la.episode_number);
-  const fresh = daysFrom(la.air_date) >= -1;
+  const fresh = daysFrom(la.air_date) === 0;   // du jour seulement : les titres « Hier »… suffisent pour le reste
   return `<button class="gp" data-a="tv" data-id="${x.id}"><div class="p">${pimg(x.t.poster_path, x.t.name)}<span class="ep">${nSeasons(x.t) > 1 ? `S${la.season_number} · ` : ""}Ép. ${la.episode_number}</span>${fresh ? `<span class="newb">NOUVEAU</span>` : ""}${s ? `<span class="badge">${I.check}</span>` : ""}</div><div class="t">${esc(x.t.name)}</div><div class="s">${!hide && la.name && !/^Épisode \d+$/.test(la.name) ? esc(la.name) : (x.t.networks?.[0] ? esc(x.t.networks[0]) : "&nbsp;")}</div></button>`;
 }
 function latestHtml(kind) {
   const L = ui.latest[kind];
-  const intro = { anime: "Les épisodes d'animés japonais sortis ces 10 derniers jours, les plus récents d'abord.", tv: "Les épisodes de séries sortis cette semaine, les plus récents d'abord.", movie: "Les films arrivés ce mois-ci en VOD / streaming en France, et ceux à l'affiche au cinéma." }[kind];
+  const intro = { anime: "Les derniers épisodes d'animés japonais, du plus récent au plus ancien.", tv: "Les derniers épisodes de séries, du plus récent au plus ancien.", movie: "Les films arrivés ce mois-ci en VOD / streaming en France, et ceux à l'affiche au cinéma." }[kind];
   let h = `<div class="sugsub" style="margin:-4px 0 10px">${intro}</div>`;
   if (!L || L === "loading") return h + `<div class="grid">${Array.from({ length: 6 }, () => `<div class="gp"><div class="p sk"></div></div>`).join("")}</div>`;
   if (kind === "movie") {
@@ -731,9 +743,10 @@ function latestHtml(kind) {
     if (cine.length) h += sec("À l'affiche au cinéma", cine.length) + `<div class="grid">${cine.map(x => cell(x, "Ciné")).join("")}</div>`;
     return h;
   }
-  if (!L.items.length) return h + `<div class="empty" style="padding:30px">Aucun épisode sorti récemment.</div>`;
+  if (!L.items.length && L.win >= WINS) return h + `<div class="empty" style="padding:30px">Aucun épisode sorti récemment.</div>`;
   const groups = new Map(); L.items.forEach(x => { const k = x.la.air_date; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(x); });
   for (const [date, arr] of groups) h += `<h3 class="lday">${esc(dayLabel(date))}<span>${arr.length}</span></h3><div class="grid lgrid">${arr.map(epCard).join("")}</div>`;
+  if (L.win < WINS) h += `<button class="btn ghost lmore" data-a="lmore" data-v="${kind}" ${L.more ? "disabled" : ""} style="width:100%;margin:18px 0 8px">${L.more ? "Chargement…" : `Voir plus (jusqu'au ${esc(fmtLong(winRange(L.win).from).replace(/^\S+ /, ""))})`}</button>`;
   return h;
 }
 
@@ -1721,6 +1734,7 @@ const A = {
     const b = $(".roul"); b?.classList.add("spin"); setTimeout(() => { b?.classList.remove("spin"); openTv(pick.s.id); toast(`🎲 Ce soir : ${pick.t?.name || pick.s.name}`); }, 650);
   },
   sview: () => { ui.seriesView = ui.seriesView === "grid" ? "list" : "grid"; try { localStorage.setItem("bobine:sview", ui.seriesView); } catch { } renderView(); },
+  lmore: el => loadMoreLatest(el.dataset.v),
   dseg: el => { ui.dseg = el.dataset.v; try { localStorage.setItem("bobine:dseg", ui.dseg); } catch { } loadLatest(ui.dseg); renderResults(); window.scrollTo(0, 0); },
   sugseg: el => { ui.sugSeg = el.dataset.v; loadSug(ui.sugSeg); renderResults(); },
   theme: el => { if (!premium.isPremium() && el.dataset.v !== "nuit") return openPaywall("theme"); applyTheme({ ...THEMES[el.dataset.v] }, true); renderView(true); },
