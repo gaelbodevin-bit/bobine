@@ -80,7 +80,7 @@ const pimg = (path, alt, size = "w342") => path
 // ═════════════ État UI + caches de détails ═════════════
 const ui = { tab: "series", seriesFilter: "watching", sugSeg: "movie", sug: {}, movieSeg: "watchlist", seriesView: (() => { try { return localStorage.getItem("bobine:sview") || "grid"; } catch { return "grid"; } })(), q: "", pushStatus: null, mode: null };
 ui.nospoil = (() => { try { return localStorage.getItem("bobine:nospoil") === "1"; } catch { return false; } })();
-const APP_V = "v33";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
+const APP_V = "v34";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
 const ADMINS = ["gael.bodevin@gmail.com", "bluecellproduction@gmail.com", "fast.and.spermious@gmail.com"];
 const isAdmin = () => ADMINS.includes((store.data.user?.email || "").toLowerCase());
 
@@ -712,17 +712,17 @@ async function latestMovies() {
   };
 }
 const dayLabel = date => { const d = daysFrom(date); if (d === 0) return "Aujourd'hui"; if (d === -1) return "Hier"; const f = fmtLong(date); return f.charAt(0).toUpperCase() + f.slice(1); };
+// Carte « affiche » (comme les films) : le n° d'épisode sorti est posé sur l'affiche de la série
 function epCard(x) {
   const s = store.data.shows.get(x.id), la = x.la, hide = s && hideEp(s, la.season_number, la.episode_number);
-  const pic = la.still_path && !hide ? img(la.still_path, "w300") : img(x.t.backdrop_path || x.t.poster_path, "w300");
   const fresh = daysFrom(la.air_date) >= -1;
-  return `<button class="ac" data-a="tv" data-id="${x.id}"><div class="p">${pic ? `<img src="${pic}" alt="" loading="lazy">` : `<div class="noimg">${esc(x.t.name)}</div>`}<span class="ep">${nSeasons(x.t) > 1 ? `S${la.season_number} · ` : ""}Ép. ${la.episode_number}</span>${fresh ? `<span class="newb">NOUVEAU</span>` : ""}${s ? `<span class="badge">${I.check}</span>` : ""}</div><div class="t">${esc(x.t.name)}</div><div class="s">${!hide && la.name && !/^Épisode \d+$/.test(la.name) ? esc(la.name) : (x.t.networks?.[0] ? esc(x.t.networks[0]) : "&nbsp;")}</div></button>`;
+  return `<button class="gp" data-a="tv" data-id="${x.id}"><div class="p">${pimg(x.t.poster_path, x.t.name)}<span class="ep">${nSeasons(x.t) > 1 ? `S${la.season_number} · ` : ""}Ép. ${la.episode_number}</span>${fresh ? `<span class="newb">NOUVEAU</span>` : ""}${s ? `<span class="badge">${I.check}</span>` : ""}</div><div class="t">${esc(x.t.name)}</div><div class="s">${!hide && la.name && !/^Épisode \d+$/.test(la.name) ? esc(la.name) : (x.t.networks?.[0] ? esc(x.t.networks[0]) : "&nbsp;")}</div></button>`;
 }
 function latestHtml(kind) {
   const L = ui.latest[kind];
   const intro = { anime: "Les épisodes d'animés japonais sortis ces 10 derniers jours, les plus récents d'abord.", tv: "Les épisodes de séries sortis cette semaine, les plus récents d'abord.", movie: "Les films arrivés ce mois-ci en VOD / streaming en France, et ceux à l'affiche au cinéma." }[kind];
   let h = `<div class="sugsub" style="margin:-4px 0 10px">${intro}</div>`;
-  if (!L || L === "loading") return h + (kind === "movie" ? `<div class="grid">${Array.from({ length: 6 }, () => `<div class="gp"><div class="p sk"></div></div>`).join("")}</div>` : `<div class="agrid">${Array.from({ length: 6 }, () => `<div class="ac"><div class="p sk"></div></div>`).join("")}</div>`);
+  if (!L || L === "loading") return h + `<div class="grid">${Array.from({ length: 6 }, () => `<div class="gp"><div class="p sk"></div></div>`).join("")}</div>`;
   if (kind === "movie") {
     const cell = (x, lbl) => `<button class="gp" data-a="mv" data-id="${x.id}"><div class="p">${pimg(x.d.poster_path || x.poster_path, x.d.title || x.title)}${daysFrom(x.date) >= -6 ? `<span class="newb">NOUVEAU</span>` : ""}${store.data.movies.has(x.id) ? `<span class="badge">${I.check}</span>` : ""}</div><div class="t">${esc(x.d.title || x.title)}</div><div class="s">${lbl} ${esc(fmtShort(x.date))}</div></button>`;
     const { vod, cine } = L.items;
@@ -733,7 +733,7 @@ function latestHtml(kind) {
   }
   if (!L.items.length) return h + `<div class="empty" style="padding:30px">Aucun épisode sorti récemment.</div>`;
   const groups = new Map(); L.items.forEach(x => { const k = x.la.air_date; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(x); });
-  for (const [date, arr] of groups) h += `<h3 class="lday">${esc(dayLabel(date))}<span>${arr.length}</span></h3><div class="agrid">${arr.map(epCard).join("")}</div>`;
+  for (const [date, arr] of groups) h += `<h3 class="lday">${esc(dayLabel(date))}<span>${arr.length}</span></h3><div class="grid lgrid">${arr.map(epCard).join("")}</div>`;
   return h;
 }
 
