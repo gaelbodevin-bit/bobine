@@ -417,3 +417,6 @@ body.kb #tabs{display:none}
 .lday span{font-size:12px;color:var(--mu);font-weight:600}
 .agrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px 10px}
 .agrid .ac{width:auto}
+/* Dernières sorties en affiches : n° d'épisode posé en bas de l'affiche */
+.gp .ep{position:absolute;left:5px;bottom:5px;background:#000000c4;color:#fff;font-size:11px;font-weight:800;padding:3px 6px;border-radius:6px;font-variant-numeric:tabular-nums}
+.lgrid .s{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
