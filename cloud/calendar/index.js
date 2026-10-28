@@ -23,7 +23,7 @@ async function tmdb(path, params = {}) {
   await slot();
   try {
     const u = new URL("https://api.themoviedb.org/3" + path);
-    u.searchParams.set("language", "fr-FR");
+    u.searchParams.set("language", "fr-FR");   // remplacé par params.language si fourni
     for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
     const bearer = TMDB_KEY.startsWith("eyJ");
     if (!bearer) u.searchParams.set("api_key", TMDB_KEY);
@@ -50,10 +50,10 @@ function fold(line) {
   out.push(cur);
   return out.join("\r\n ");
 }
-function vcal(events, name = "Playwatch") {
+function vcal(events, name = "Playwatch", en = false) {
   const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
   const L = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Blue Cell Production//Playwatch//FR", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
-    `X-WR-CALNAME:${esc(name)}`, "X-WR-CALDESC:Sorties de tes séries\\, films et jeux (Playwatch)", "X-WR-TIMEZONE:Europe/Paris",
+    `X-WR-CALNAME:${esc(name)}`, en ? "X-WR-CALDESC:Releases of your shows\\, movies and games (Playwatch)" : "X-WR-CALDESC:Sorties de tes séries\\, films et jeux (Playwatch)", "X-WR-TIMEZONE:Europe/Paris",
     "REFRESH-INTERVAL;VALUE=DURATION:PT6H", "X-PUBLISHED-TTL:PT6H"];
   for (const e of events) {
     const d = e.date.replace(/-/g, ""), end = iso(Date.parse(e.date + "T12:00:00Z") + DAY).replace(/-/g, "");
@@ -66,7 +66,8 @@ function vcal(events, name = "Playwatch") {
 }
 
 // ── Construction du calendrier d'un utilisateur ──
-async function build(uid, nospoil) {
+async function build(uid, nospoil, en = false, REG = "FR") {
+  const language = en ? "en-US" : "fr-FR";
   const now = Date.now(), from = iso(now - 30 * DAY), to = iso(now + 120 * DAY);
   const inWin = d => d && d >= from && d <= to;
   const events = [];
@@ -80,21 +81,21 @@ async function build(uid, nospoil) {
     const s = doc.data();
     if (s.deleted || s.status === "stopped") return;
     try {
-      const t = await tmdb(`/tv/${s.id}`);
+      const t = await tmdb(`/tv/${s.id}`, { language });
       const la = t.last_episode_to_air, nx = t.next_episode_to_air;
       if (!inWin(la?.air_date) && !nx) return;
       const ns = new Set([la?.season_number, nx?.season_number].filter(n => n > 0));
       for (const n of ns) {
-        const sea = await tmdb(`/tv/${s.id}/season/${n}`);
+        const sea = await tmdb(`/tv/${s.id}/season/${n}`, { language });
         for (const e of sea.episodes || []) {
           if (!inWin(e.air_date)) continue;
           const seen = !!s.watched?.[n]?.includes(e.episode_number);
           const hide = nospoil && !seen;
-          const title = !hide && e.name && !/^Épisode \d+$/.test(e.name) ? ` · ${e.name}` : "";
+          const title = !hide && e.name && !/^(Épisode|Episode) \d+$/.test(e.name) ? ` · ${e.name}` : "";
           events.push({
             uid: `tv-${s.id}-${n}-${e.episode_number}`, date: e.air_date,
             title: `${t.name} — ${SE(n, e.episode_number)}${title}`,
-            desc: [t.networks?.[0]?.name, !hide && e.overview ? e.overview : "", seen ? "✓ Déjà vu" : ""].filter(Boolean).join("\n\n"),
+            desc: [t.networks?.[0]?.name, !hide && e.overview ? e.overview : "", seen ? (en ? "✓ Already watched" : "✓ Déjà vu") : ""].filter(Boolean).join("\n\n"),
             url: `${APP_URL}#tv-${s.id}`
           });
         }
@@ -106,23 +107,23 @@ async function build(uid, nospoil) {
     const m = doc.data();
     if (m.deleted) return;
     try {
-      const d = await tmdb(`/movie/${m.id}`, { append_to_response: "release_dates" });
-      const fr = d.release_dates?.results?.find(r => r.iso_3166_1 === "FR");
+      const d = await tmdb(`/movie/${m.id}`, { append_to_response: "release_dates", language });
+      const fr = d.release_dates?.results?.find(r => r.iso_3166_1 === REG);
       const us = d.release_dates?.results?.find(r => r.iso_3166_1 === "US");
       const pick = (src, ty) => src?.release_dates?.find(x => x.type === ty)?.release_date?.slice(0, 10);
       const cine = pick(fr, 3) || pick(fr, 2) || (!fr ? d.release_date : null), vod = pick(fr, 4) || pick(us, 4);
-      if (inWin(cine)) events.push({ uid: `mv-${m.id}-cine`, date: cine, title: `🎬 ${d.title} — au cinéma`, desc: d.overview || "", url: `${APP_URL}#mv-${m.id}` });
-      if (inWin(vod)) events.push({ uid: `mv-${m.id}-vod`, date: vod, title: `📺 ${d.title} — en VOD / streaming`, desc: d.overview || "", url: `${APP_URL}#mv-${m.id}` });
+      if (inWin(cine)) events.push({ uid: `mv-${m.id}-cine`, date: cine, title: `🎬 ${d.title} — ${en ? "in theaters" : "au cinéma"}`, desc: d.overview || "", url: `${APP_URL}#mv-${m.id}` });
+      if (inWin(vod)) events.push({ uid: `mv-${m.id}-vod`, date: vod, title: `📺 ${d.title} — ${en ? "streaming" : "en VOD / streaming"}`, desc: d.overview || "", url: `${APP_URL}#mv-${m.id}` });
     } catch (e) { console.warn("film", m.id, e.message); }
   }));
 
   for (const doc of games.docs) {
     const g = doc.data();
     if (g.deleted || !["wishlist", "backlog", "paused"].includes(g.status) || !inWin(g.released)) continue;
-    events.push({ uid: `gm-${g.id}`, date: g.released, title: `🎮 ${g.name} — sortie`, url: `${APP_URL}#gm-${g.id}` });
+    events.push({ uid: `gm-${g.id}`, date: g.released, title: `🎮 ${g.name} — ${en ? "release" : "sortie"}`, url: `${APP_URL}#gm-${g.id}` });
   }
   events.sort((a, b) => a.date < b.date ? -1 : 1);
-  return vcal(events.slice(0, 1500));
+  return vcal(events.slice(0, 1500), "Playwatch", en);
 }
 
 // ── Point d'entrée HTTP ──
@@ -139,18 +140,19 @@ functions.http("calendar", async (req, res) => {
 
     const u = await db.collection("users").where("calToken", "==", token).limit(1).get();
     if (u.empty) return res.status(404).send("Calendrier introuvable (lien remplacé ou supprimé)");
-    const uid = u.docs[0].id, nospoil = !!u.docs[0].data().nospoil;
+    const uid = u.docs[0].id, ud = u.docs[0].data(), nospoil = !!ud.nospoil, en = ud.lang === "en", REG = /^[A-Z]{2}$/.test(ud.region || "") ? ud.region : (en ? "US" : "FR");
     const ent = await db.doc(`entitlements/${uid}`).get();
     if (!ent.data()?.premium) {
-      return send(vcal([{ uid: "premium", date: iso(Date.now()), title: "Calendrier Playwatch : Premium requis", desc: "Le calendrier abonnable fait partie de Playwatch Premium.", url: APP_URL }]));
+      return send(vcal([{ uid: "premium", date: iso(Date.now()), title: en ? "Playwatch calendar: Premium required" : "Calendrier Playwatch : Premium requis", desc: en ? "The subscribable calendar is part of Playwatch Premium." : "Le calendrier abonnable fait partie de Playwatch Premium.", url: APP_URL }], "Playwatch", en));
     }
     const ref = db.doc(`calcache/${token}`);
     const c = (await ref.get()).data();
     let ics;
-    if (c && c.uid === uid && c.nospoil === nospoil && Date.now() - c.at < TTL) ics = c.ics;
+    const lk = (en ? "en" : "fr") + REG;
+    if (c && c.uid === uid && c.nospoil === nospoil && c.lk === lk && Date.now() - c.at < TTL) ics = c.ics;
     else {
-      ics = await build(uid, nospoil);
-      if (Buffer.byteLength(ics) < 900000) await ref.set({ uid, at: Date.now(), nospoil, ics }).catch(e => console.warn("cache", e.message));
+      ics = await build(uid, nospoil, en, REG);
+      if (Buffer.byteLength(ics) < 900000) await ref.set({ uid, at: Date.now(), nospoil, lk, ics }).catch(e => console.warn("cache", e.message));
     }
     mem.set(token, { at: Date.now(), ics });
     send(ics);
