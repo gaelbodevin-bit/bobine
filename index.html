@@ -28,7 +28,7 @@
   // Filet de sécurité : si l'app n'a pas démarré au bout de 12 s (réseau très lent, fichier abîmé…),
   // on l'explique sous le logo, avec l'erreur éventuelle et un bouton pour relancer proprement.
   (function () {
-    var err = "";
+    var err = "", en = (function () { try { var p = localStorage.getItem("bobine:lang"); if (p === "fr" || p === "en") return p === "en"; } catch (e) { } return !/^fr/i.test(navigator.language || "fr"); })();
     addEventListener("error", function (e) { if (!err) err = e.message || (e.target && (e.target.src || e.target.href) ? "Fichier introuvable : " + (e.target.src || e.target.href) : ""); }, true);
     addEventListener("unhandledrejection", function (e) { if (!err) err = String(e.reason && e.reason.message || e.reason || ""); });
     setTimeout(function () {
@@ -36,7 +36,7 @@
       var b = document.querySelector(".boot"); if (!b || b.querySelector(".bootmsg")) return;
       var d = document.createElement("div"); d.className = "bootmsg";
       d.style.cssText = "position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom,0px) + 56px);display:flex;flex-direction:column;align-items:center;gap:12px;padding:0 24px;text-align:center;color:#9a9aa6;font:14px/1.4 -apple-system,system-ui,sans-serif";
-      d.innerHTML = '<div>Le démarrage prend plus de temps que prévu.</div><button type="button" style="font:600 15px -apple-system,system-ui,sans-serif;padding:11px 22px;border-radius:12px;border:0;background:#ffc83d;color:#111">Relancer</button><small style="font-size:11px;opacity:.75;word-break:break-word"></small>';
+      d.innerHTML = '<div>' + (en ? "Startup is taking longer than expected." : "Le démarrage prend plus de temps que prévu.") + '</div><button type="button" style="font:600 15px -apple-system,system-ui,sans-serif;padding:11px 22px;border-radius:12px;border:0;background:#ffc83d;color:#111">' + (en ? "Restart" : "Relancer") + '</button><small style="font-size:11px;opacity:.75;word-break:break-word"></small>';
       d.querySelector("small").textContent = err ? err.slice(0, 300) : "";
       d.querySelector("button").onclick = function () {
         var go = function () { location.reload(); };
