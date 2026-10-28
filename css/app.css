@@ -498,3 +498,20 @@ html.bar-clear :is(#tabs,.lp-tabs){backdrop-filter:blur(10px) saturate(1.6);-web
 .lp-tag{position:absolute;top:-4px;left:50%;transform:translateX(-50%);z-index:3;display:flex;align-items:center;gap:5px;white-space:nowrap;background:var(--ac);color:var(--ac-tx);font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:3px 10px;border-radius:99px;box-shadow:0 0 0 3px var(--bg)}
 .lp-tag svg{width:13px;height:13px}
 html:is(.rad-square,.rad-soft) body .lp-tag:not(#_){border-radius:99px!important}
+/* Barre de recherche qui se cache en descendant, bouton « remonter », filtres */
+.srow{transition:transform .22s ease,opacity .22s ease}
+body.srow-hide .srow{transform:translateY(calc(-100% - var(--st) - 10px));opacity:0;pointer-events:none}
+.totop{position:fixed;right:16px;bottom:calc(var(--tabh) + var(--sb) + 16px);z-index:15;width:46px;height:46px;border-radius:50%;display:grid;place-items:center;background:var(--s3);color:var(--tx);border:1px solid var(--line);box-shadow:0 6px 18px #0008;opacity:0;transform:translateY(14px) scale(.9);pointer-events:none;transition:opacity .2s,transform .2s}
+.totop.in{opacity:1;transform:none;pointer-events:auto}
+.totop svg{width:22px;height:22px}
+body.kb .totop{display:none}
+html:is(.rad-square,.rad-soft) body .totop:not(#_){border-radius:50%!important}
+.fbar{display:flex;gap:8px;overflow-x:auto;margin:0 -16px 12px;padding:2px 16px;scrollbar-width:none}
+.fbar::-webkit-scrollbar{display:none}
+.fchip{position:relative;flex:none;display:flex;align-items:center;gap:5px;height:34px;padding:0 13px;border-radius:17px;background:var(--s1);border:1px solid var(--line);font-size:13.5px;font-weight:600;color:var(--mu);white-space:nowrap}
+.fchip svg{width:14px;height:14px;flex:none}
+.fchip small{font-size:12px;opacity:.7;font-weight:700}
+.fchip.on{background:var(--ac);border-color:var(--ac);color:var(--ac-tx)}
+.fchip:disabled{opacity:.4}
+.fchip select{position:absolute;inset:0;width:100%;height:100%;opacity:0;font-size:16px;cursor:pointer}
+.fchip.clr{background:transparent;border-color:transparent;padding:0 6px}
