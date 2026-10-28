@@ -7,6 +7,8 @@ import * as rawg from "./rawg.js";
 import * as premium from "./premium.js";
 import { gimg } from "./rawg.js";
 import { img, airedList, isWatched, progress, watchedCount, seenCount } from "./tmdb.js";
+import { installTranslator, LOC, LANG as UILANG, LANG_PREF, REGION as UIREGION } from "./i18n.js";
+installTranslator();   // anglais : traduit l'interface à l'affichage (rien en français)
 
 // ═════════════ Utilitaires ═════════════
 const $ = (s, r = document) => r.querySelector(s);
@@ -55,9 +57,9 @@ const DAY = 864e5;
 const isoToday = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); };
 const dParse = s => s ? new Date(s + "T12:00:00") : null;
 const daysFrom = s => s ? Math.round((dParse(s) - dParse(isoToday())) / DAY) : null;
-const fmtLong = s => s ? dParse(s).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" }) : "";
-const fmtShort = s => s ? dParse(s).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" }) : "";
-const fmtFull = s => s ? dParse(s).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }) : "";
+const fmtLong = s => s ? dParse(s).toLocaleDateString(LOC, { weekday: "long", day: "numeric", month: "long" }) : "";
+const fmtShort = s => s ? dParse(s).toLocaleDateString(LOC, { weekday: "short", day: "numeric", month: "short" }) : "";
+const fmtFull = s => s ? dParse(s).toLocaleDateString(LOC, { day: "numeric", month: "long", year: "numeric" }) : "";
 const year = s => (s || "").slice(0, 4);
 function rel(s) {
   const d = daysFrom(s); if (d === null) return "";
@@ -83,7 +85,7 @@ const pimg = (path, alt, size = "w342") => path
 // ═════════════ État UI + caches de détails ═════════════
 const ui = { tab: "series", seriesFilter: "watching", sugSeg: "movie", sug: {}, movieSeg: "watchlist", seriesView: (() => { try { return localStorage.getItem("bobine:sview") || "grid"; } catch { return "grid"; } })(), q: "", pushStatus: null, mode: null };
 ui.nospoil = (() => { try { return localStorage.getItem("bobine:nospoil") === "1"; } catch { return false; } })();
-const APP_V = "v45";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
+const APP_V = "v46";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
 const ADMINS = ["gael.bodevin@gmail.com", "bluecellproduction@gmail.com", "fast.and.spermious@gmail.com"];
 const isAdmin = () => ADMINS.includes((store.data.user?.email || "").toLowerCase());
 
@@ -664,7 +666,7 @@ function vMovies(v) {
   if (ui.movieSeg === "watched") {
     if (!watched.length) h += `<div class="empty">${I.film}<h3>Aucun film vu</h3><p>Cherche un film dans Découvrir et marque-le comme vu.</p></div>`;
     const byMonth = new Map();
-    watched.forEach(m => { const k = m.watchedAt ? new Date(m.watchedAt).toLocaleDateString("fr-FR", { month: "long", year: "numeric" }) : "Date inconnue"; if (!byMonth.has(k)) byMonth.set(k, []); byMonth.get(k).push(m); });
+    watched.forEach(m => { const k = m.watchedAt ? new Date(m.watchedAt).toLocaleDateString(LOC, { month: "long", year: "numeric" }) : "Date inconnue"; if (!byMonth.has(k)) byMonth.set(k, []); byMonth.get(k).push(m); });
     for (const [k, arr] of byMonth) h += sec(k.charAt(0).toUpperCase() + k.slice(1), arr.length) + wrap(arr.map(m => cell(m, year(m.release_date) + (list && m.runtime ? ` · ${Math.floor(m.runtime / 60)} h ${String(m.runtime % 60).padStart(2, "0")}` : ""))).join(""));
   } else {
     if (!wl.length) h += `<div class="empty">${I.mark}<h3>Liste vide</h3><p>Ajoute des films à voir (onglet Découvrir) : tu seras notifié à leur sortie.</p></div>`;
@@ -705,7 +707,10 @@ const GENRES = {
   movie: [[28, "Action"], [12, "Aventure"], [16, "Animation"], [35, "Comédie"], [80, "Crime"], [99, "Documentaire"], [18, "Drame"], [10751, "Familial"], [14, "Fantastique"], [27, "Horreur"], [9648, "Mystère"], [10749, "Romance"], [878, "Science-fiction"], [53, "Thriller"], [36, "Histoire"], [10752, "Guerre"]]
 };
 const PROV_MAIN = [[8, "Netflix"], [119, "Prime Video"], [337, "Disney+"], [381, "Canal+"], [1899, "Max"], [350, "Apple TV+"], [531, "Paramount+"]];
-const PROVS = { anime: [[283, "Crunchyroll"], [415, "ADN"], [8, "Netflix"], [119, "Prime Video"], [337, "Disney+"]], tv: PROV_MAIN, movie: PROV_MAIN };
+// Plateformes proposées selon le pays (Canal+ et ADN : pays francophones ; Hulu et Peacock : États-Unis)
+const FRANCO = ["FR", "BE", "CH", "LU", "MC"].includes(UIREGION);
+const PROV_LOCAL = [...PROV_MAIN.filter(p => FRANCO || p[0] !== 381), ...(UIREGION === "US" ? [[15, "Hulu"], [386, "Peacock"]] : [])];
+const PROVS = { anime: [[283, "Crunchyroll"], ...(FRANCO ? [[415, "ADN"]] : []), [8, "Netflix"], [119, "Prime Video"], [337, "Disney+"]], tv: PROV_LOCAL, movie: PROV_LOCAL };
 const MSRC = [["vod", "VOD / streaming"], ["cine", "Au cinéma"]];
 ui.dfilt = (() => { try { const o = JSON.parse(localStorage.getItem("bobine:dfilt") || "{}"); return o && typeof o === "object" ? o : {}; } catch { return {}; } })();
 const df = kind => ui.dfilt[kind] || (ui.dfilt[kind] = {});
@@ -734,7 +739,7 @@ const winRange = w => ({ from: ago(WIN * w + WIN - 1), to: w ? ago(WIN * w) : is
 async function latestEps(kind, w, skip = new Set(), f = {}) {
   const { from, to } = winRange(w);
   const base = kind === "anime" ? { with_genres: f.g ? `16,${f.g}` : "16", with_original_language: "ja" } : { without_genres: "16,10763,10764,10766,10767", "vote_count.gte": "30", ...(f.g ? { with_genres: String(f.g) } : {}) };
-  if (f.p) Object.assign(base, { with_watch_providers: String(f.p), watch_region: "FR" });
+  if (f.p) Object.assign(base, { with_watch_providers: String(f.p), watch_region: UIREGION });
   const pages = await Promise.all([1, 2, 3].map(page => tmdb.get("/discover/tv", { ...base, "air_date.gte": from, "air_date.lte": to, sort_by: "popularity.desc", page }, { ttl: 3 }).catch(() => ({}))));
   const seen = new Set(skip), list = pages.flatMap(p => p.results || []).filter(x => !seen.has(x.id) && seen.add(x.id)).slice(0, 48);
   const det = await Promise.all(list.map(x => tmdb.tv(x.id).catch(() => null)));
@@ -753,13 +758,13 @@ async function loadMoreLatest(kind) {
 // Films : nouveautés VOD / streaming en France (30 j) et films à l'affiche
 async function latestMovies(f = {}) {
   const td = isoToday(), from = ago(30);
-  const vq = { region: "FR", with_release_type: "4", "release_date.gte": from, "release_date.lte": td, sort_by: "popularity.desc" };
+  const vq = { region: UIREGION, with_release_type: "4", "release_date.gte": from, "release_date.lte": td, sort_by: "popularity.desc" };
   if (f.g) vq.with_genres = String(f.g);
-  if (f.p) Object.assign(vq, { with_watch_providers: String(f.p), watch_region: "FR" });
+  if (f.p) Object.assign(vq, { with_watch_providers: String(f.p), watch_region: UIREGION });
   const [vodP, ...cineP] = await Promise.all([
     tmdb.get("/discover/movie", vq, { ttl: 6 }),
     // Au cinéma : pas de plateforme possible ; le genre est filtré ici
-    ...(f.p ? [] : [1, 2].map(page => tmdb.get("/movie/now_playing", { region: "FR", page }, { ttl: 6 }).then(r => ({ results: (r.results || []).filter(x => !f.g || (x.genre_ids || []).includes(+f.g)) }))))
+    ...(f.p ? [] : [1, 2].map(page => tmdb.get("/movie/now_playing", { region: UIREGION, page }, { ttl: 6 }).then(r => ({ results: (r.results || []).filter(x => !f.g || (x.genre_ids || []).includes(+f.g)) }))))
   ]);
   const det = async arr => (await Promise.all(arr.slice(0, 24).map(x => tmdb.movie(x.id).then(d => ({ ...x, d }), () => null)))).filter(Boolean);
   const seenC = new Set();
@@ -875,6 +880,7 @@ function vSettings(v, force) {
   <div class="card"><h3>Contenus affichés</h3><p>Décoche ce que tu ne suis pas : le sélecteur du haut disparaît s'il ne reste qu'un univers.</p>
     <label class="colrow"><span>${I.film.replace("<svg", '<svg style="width:18px;height:18px;vertical-align:-4px;margin-right:8px"')}Films & séries</span><input type="checkbox" class="tgl" data-dom="av" ${ui.domains.av ? "checked" : ""}></label>
     <label class="colrow"><span>${I.pad.replace("<svg", '<svg style="width:18px;height:18px;vertical-align:-4px;margin-right:8px"')}Jeux vidéo</span><input type="checkbox" class="tgl" data-dom="games" ${ui.domains.games ? "checked" : ""}></label></div>
+  <div class="card"><h3>Langue</h3><label class="colrow" style="border:0;padding-bottom:0"><span>Langue de l'application</span><select class="selbox" id="langsel" aria-label="Langue"><option value="auto" ${LANG_PREF === "auto" ? "selected" : ""}>Automatique (langue du téléphone)</option><option value="fr" ${LANG_PREF === "fr" ? "selected" : ""}>Français</option><option value="en" ${LANG_PREF === "en" ? "selected" : ""}>English</option></select></label></div>
   <div class="card"><label class="colrow" style="border:0;padding:0;gap:14px"><span><b style="display:block;font-size:16px;margin-bottom:3px">${I.eye.replace("<svg", '<svg style="width:18px;height:18px;vertical-align:-3px;margin-right:6px;color:var(--ac)"')}Mode sans spoiler</b><small style="color:var(--mu);font-size:14px">Masque le titre, l'image et le résumé des épisodes que tu n'as pas encore vus : listes, fiches, À venir, notifications et calendrier.</small></span><input type="checkbox" class="tgl" id="nospoil" ${ui.nospoil ? "checked" : ""}></label></div>
   ${calCard()}
   <div class="card">${themeCard()}</div>
@@ -901,6 +907,7 @@ function vSettings(v, force) {
 `;
   $("#impfile").addEventListener("change", e => runImport([...e.target.files]));
   $("#nospoil").addEventListener("change", e => setNoSpoil(e.target.checked));
+  $("#langsel").addEventListener("change", e => { try { localStorage.setItem("bobine:lang", e.target.value); } catch { } location.reload(); });
   if (ui.userDoc === undefined && u && !u.local) store.getUserDoc().then(d => { ui.userDoc = d; refreshCalCard(); }).catch(() => { ui.userDoc = {}; refreshCalCard(); });
   v.querySelectorAll("input[data-dom]").forEach(cb => cb.addEventListener("change", () => {
     const d = { ...ui.domains, [cb.dataset.dom]: cb.checked };
@@ -920,13 +927,13 @@ function profStats() {
   const mw = [...store.data.movies.values()].filter(m => m.status === "watched");
   const mmin = mw.reduce((n, m) => n + (m.runtime || movieD.get(m.id)?.runtime || 110), 0);
   return `<div class="stat"><b>${shows.length}</b><span>séries suivies</span></div>
-    <div class="stat"><b>${eps.toLocaleString("fr-FR")}</b><span>épisodes vus</span></div>
+    <div class="stat"><b>${eps.toLocaleString(LOC)}</b><span>épisodes vus</span></div>
     <div class="stat"><b>${dur(smin)}</b><span>devant des séries</span></div>
     <div class="stat"><b>${mw.length}</b><span>films vus · ${dur(mmin)}</span></div>` + (ui.domains.games ? (() => {
     const gs = [...store.data.games.values()];
     const done = gs.filter(g => g.status === "beaten" || g.status === "completed").length;
     const gh = gs.reduce((n, g) => n + (g.hours || 0), 0);
-    return `<div class="stat"><b>${gs.filter(g => g.status === "playing").length}</b><span>jeux en cours</span></div><div class="stat"><b>${done}</b><span>jeux terminés</span></div>${gh ? `<div class="stat"><b>${Math.round(gh).toLocaleString("fr-FR")} h</b><span>de jeu</span></div>` : ""}`;
+    return `<div class="stat"><b>${gs.filter(g => g.status === "playing").length}</b><span>jeux en cours</span></div><div class="stat"><b>${done}</b><span>jeux terminés</span></div>${gh ? `<div class="stat"><b>${Math.round(gh).toLocaleString(LOC)} h</b><span>de jeu</span></div>` : ""}`;
   })() : "");
 }
 function pushCard() {
@@ -989,7 +996,7 @@ function advStats() {
   const shows = [...store.data.shows.values()], movies = [...store.data.movies.values()], games = [...store.data.games.values()];
   const mw = movies.filter(m => m.status === "watched");
   const count = (arr) => { const m = new Map(); arr.forEach(k => k && m.set(k, (m.get(k) || 0) + 1)); return [...m.entries()].sort((a, b) => b[1] - a[1]); };
-  const bars = (rows, unit = "") => { const max = Math.max(1, ...rows.map(r => r[1])); return `<div class="bars">${rows.map(([k, n]) => `<div class="br"><span class="bl">${esc(String(k))}</span><span class="bt"><i style="width:${Math.max(4, n / max * 100)}%"></i></span><b>${n.toLocaleString("fr-FR")}${unit}</b></div>`).join("")}</div>`; };
+  const bars = (rows, unit = "") => { const max = Math.max(1, ...rows.map(r => r[1])); return `<div class="bars">${rows.map(([k, n]) => `<div class="br"><span class="bl">${esc(String(k))}</span><span class="bt"><i style="width:${Math.max(4, n / max * 100)}%"></i></span><b>${n.toLocaleString(LOC)}${unit}</b></div>`).join("")}</div>`; };
   const block = (t, inner) => inner ? `<h4 class="ast">${t}</h4>${inner}` : "";
   // Récap de l'année
   const myr = mw.filter(m => inY(m.watchedAt)), mmin = myr.reduce((n, m) => n + (m.runtime || movieD.get(m.id)?.runtime || 110), 0);
@@ -1017,7 +1024,7 @@ function advStats() {
   if (ui.domains.games && games.length) {
     h += block("Plateformes de jeux", bars(count(games.map(g => g.platform)).slice(0, 5)) );
     const timed = games.filter(g => g.hours > 0).sort((a, b) => b.hours - a.hours);
-    if (timed.length) h += block(`Temps de jeu · ${Math.round(timed.reduce((n, g) => n + g.hours, 0)).toLocaleString("fr-FR")} h au total`, bars(timed.slice(0, 5).map(g => [g.name, g.hours])));
+    if (timed.length) h += block(`Temps de jeu · ${Math.round(timed.reduce((n, g) => n + g.hours, 0)).toLocaleString(LOC)} h au total`, bars(timed.slice(0, 5).map(g => [g.name, g.hours])));
     const gg = count(games.flatMap(g => (g.genres || []).map(x => x.name || x))).slice(0, 5);
     h += block("Genres de jeux", gg.length ? bars(gg) : "");
   }
@@ -1044,7 +1051,7 @@ function openErrLog() {
     h += `<button class="btn ghost danger" data-a="errClear" style="width:100%;margin-bottom:12px">${I.trash}Vider le journal (${L.length})</button>`;
     for (const r of L) {
       const when = r.ts?.toDate ? r.ts.toDate() : new Date(r.at || 0);
-      h += `<details class="errrow"><summary><b>${esc(r.msg || "?")}</b><small>${esc(when.toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" }))} · ${esc(r.v || "?")} · ${esc(device(r.ua))}${r.standalone ? " · app" : ""}${r.online === false ? " · hors ligne" : ""}<br>${esc(r.email || "non connecté")} · ${esc(r.where || "")}${r.tab ? " · onglet " + esc(r.tab) : ""}</small></summary><pre>${esc(r.stack || "(pas de pile)")}\n\n${esc(r.ua || "")}</pre></details>`;
+      h += `<details class="errrow"><summary><b>${esc(r.msg || "?")}</b><small>${esc(when.toLocaleString(LOC, { dateStyle: "short", timeStyle: "short" }))} · ${esc(r.v || "?")} · ${esc(device(r.ua))}${r.standalone ? " · app" : ""}${r.online === false ? " · hors ligne" : ""}<br>${esc(r.email || "non connecté")} · ${esc(r.where || "")}${r.tab ? " · onglet " + esc(r.tab) : ""}</small></summary><pre>${esc(r.stack || "(pas de pile)")}\n\n${esc(r.ua || "")}</pre></details>`;
     }
     return h + `</div>`;
   });
@@ -1118,21 +1125,21 @@ function computeRecap(Y) {
     Y, per, eps: per.reduce((n, x) => n + x.n, 0), shows: per.length, finished, smin, mmin, gh, hours: Math.round((smin + mmin) / 60 + gh),
     movies: mv, topMovie: mv[0] || null, rated: mv.filter(m => m.rating), games,
     genre: weigh(x => x.t?.genres), network: weigh(x => x.t?.networks?.slice(0, 1)),
-    month: dated >= 8 && months[best] ? new Date(Y, best, 1).toLocaleDateString("fr-FR", { month: "long" }) : ""
+    month: dated >= 8 && months[best] ? new Date(Y, best, 1).toLocaleDateString(LOC, { month: "long" }) : ""
   };
 }
 function openRecap(Y) {
   if (!premium.isPremium()) return openPaywall("recap");
   const sh = openSheet(() => {
     const r = computeRecap(Y); ui.recap = r;
-    const nf = n => n.toLocaleString("fr-FR");
+    const nf = n => n.toLocaleString(LOC);
     if (!r.eps && !r.movies.length && !r.games.length) return `<div class="body recap"><div class="rc-hero"><small>PLAYWATCH</small><h1>Ta rétro ${Y}</h1></div><div class="empty" style="padding:30px 10px">${I.spark}<h3>Pas encore assez de visionnages</h3><p>Coche tes épisodes et tes films au fil de l'année : ta rétro se construit toute seule.</p></div></div>`;
     const poster = (p, n) => `<div class="rc-p">${p ? `<img src="${img(p, "w185")}" alt="" loading="lazy">` : `<div class="noimg">${esc(n)}</div>`}</div>`;
     let h = `<div class="body recap"><div class="rc-hero"><small>PLAYWATCH</small><h1>Ta rétro ${Y}</h1><p>${r.month ? `Ton mois le plus chargé : <b>${esc(r.month)}</b>` : "Ton année en séries, films et jeux"}</p></div>
       <div class="rc-big"><b>${nf(r.hours)}</b><span>heures devant l'écran</span><small>${nf(Math.round(r.smin / 60))} h de séries · ${nf(Math.round(r.mmin / 60))} h de films${r.gh ? ` · ${nf(Math.round(r.gh))} h de jeu` : ""}</small></div>
       <div class="rc-grid"><div><b>${nf(r.eps)}</b><span>épisodes</span></div><div><b>${r.shows}</b><span>séries</span></div><div><b>${r.movies.length}</b><span>films</span></div>${ui.domains.games ? `<div><b>${r.games.length}</b><span>jeux finis</span></div>` : `<div><b>${r.finished}</b><span>séries finies</span></div>`}</div>`;
     if (r.per.length) h += `<h3 class="rc-h">Tes séries de l'année</h3>` + r.per.slice(0, 5).map((x, i) => `<button class="rc-row" data-a="tv" data-id="${x.s.id}"><span class="rc-n">${i + 1}</span>${poster(x.t?.poster_path || x.s.poster_path, x.s.name)}<div><b>${esc(x.t?.name || x.s.name)}</b><small>${plural(x.n, "épisode")} · ${dur(x.min)}</small></div></button>`).join("");
-    if (r.topMovie) { const m = r.topMovie; h += `<h3 class="rc-h">${m.rating ? "Ton film préféré" : "Ton dernier film"}</h3><button class="rc-row" data-a="mv" data-id="${m.id}">${poster(m.poster_path, m.title)}<div><b>${esc(m.title)}</b><small>${m.rating ? "★".repeat(m.rating) + " · " : ""}vu le ${esc(new Date(m.watchedAt).toLocaleDateString("fr-FR", { day: "numeric", month: "long" }))}${r.rated.length ? ` · moyenne ${(r.rated.reduce((n, x) => n + x.rating, 0) / r.rated.length).toFixed(1).replace(".", ",")}★` : ""}</small></div></button>`; }
+    if (r.topMovie) { const m = r.topMovie; h += `<h3 class="rc-h">${m.rating ? "Ton film préféré" : "Ton dernier film"}</h3><button class="rc-row" data-a="mv" data-id="${m.id}">${poster(m.poster_path, m.title)}<div><b>${esc(m.title)}</b><small>${m.rating ? "★".repeat(m.rating) + " · " : ""}vu le ${esc(new Date(m.watchedAt).toLocaleDateString(LOC, { day: "numeric", month: "long" }))}${r.rated.length ? ` · moyenne ${(r.rated.reduce((n, x) => n + x.rating, 0) / r.rated.length).toFixed(1).replace(".", ",")}★` : ""}</small></div></button>`; }
     if (r.games.length) h += `<h3 class="rc-h">Jeux terminés</h3><div class="rc-games">${r.games.slice(0, 8).map(g => `<div>${g.background_image ? `<img src="${esc(gimg(g.background_image))}" alt="" loading="lazy">` : ""}<small>${esc(g.name)}${g.hours ? ` · ${String(g.hours).replace(".", ",")} h` : ""}</small></div>`).join("")}</div>`;
     const tags = [r.genre && ["Genre préféré", r.genre], r.network && ["Chaîne / plateforme", r.network], r.finished && ["Séries terminées", r.finished]].filter(Boolean);
     if (tags.length) h += `<div class="rc-tags">${tags.map(([k, v]) => `<div><small>${k}</small><b>${esc(String(v))}</b></div>`).join("")}</div>`;
@@ -1164,7 +1171,7 @@ async function drawRecap(r, withImages) {
   g = x.createRadialGradient(0, H, 40, 0, H, 900); g.addColorStop(0, ac + "33"); g.addColorStop(1, ac + "00"); x.fillStyle = g; x.fillRect(0, 0, W, H);
   const rr = (X, Y, w, h, rad) => { x.beginPath(); x.moveTo(X + rad, Y); x.arcTo(X + w, Y, X + w, Y + h, rad); x.arcTo(X + w, Y + h, X, Y + h, rad); x.arcTo(X, Y + h, X, Y, rad); x.arcTo(X, Y, X + w, Y, rad); x.closePath(); };
   const fit = (t, max) => { let s = String(t); if (x.measureText(s).width <= max) return s; while (s.length > 1 && x.measureText(s + "…").width > max) s = s.slice(0, -1); return s + "…"; };
-  const nf = n => n.toLocaleString("fr-FR");
+  const nf = n => n.toLocaleString(LOC);
   x.textBaseline = "alphabetic"; x.fillStyle = ac; x.font = F(800, 34); x.letterSpacing = "6px"; x.fillText("PLAYWATCH", 90, 150); x.letterSpacing = "0px";
   x.fillStyle = tx; x.font = F(900, 118); x.fillText("Ta rétro " + r.Y, 84, 285);
   if (r.month) { x.fillStyle = mu; x.font = F(600, 38); x.fillText("Mois le plus chargé : " + r.month, 90, 350); }
@@ -1859,7 +1866,7 @@ function mvSheet(id, sh) {
   <div class="body">
     <div class="btns"><button class="btn ${w ? "ok" : "pri"}" data-a="mvWatched" data-id="${id}">${I.check}${w ? "Vu" : "Marquer vu"}</button>
     ${!w ? `<button class="btn ${wl ? "ok" : ""}" data-a="mvList" data-id="${id}">${I.mark}${wl ? "Dans ma liste" : "À voir"}</button>` : ""}</div>
-    ${w ? `<div style="color:var(--mu);font-size:13px">Vu le ${new Date(m.watchedAt).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })} · Ta note :</div>
+    ${w ? `<div style="color:var(--mu);font-size:13px">Vu le ${new Date(m.watchedAt).toLocaleDateString(LOC, { day: "numeric", month: "long", year: "numeric" })} · Ta note :</div>
       <div class="stars">${[1, 2, 3, 4, 5].map(n => `<button data-a="rate" data-id="${id}" data-v="${n}" class="${(m.rating || 0) >= n ? "on" : ""}" aria-label="${n} étoiles">${I.star}</button>`).join("")}</div>` : ""}
     ${(rel1 || rel2) ? `<div class="info">${I.cal}<div>${rel1 || ""}${rel2 || ""}</div></div>` : ""}
     ${d.genres.length ? `<div class="gen">${d.genres.map(g => `<span>${esc(g)}</span>`).join("")}</div>` : ""}
@@ -2247,7 +2254,7 @@ async function runImport(files) {
 
   if (an.bobine) {
     const b = an.bobine;
-    log.textContent = `Sauvegarde Playwatch du ${new Date(b.exportedAt).toLocaleString("fr-FR")}\n${plural(b.shows.length, "série")} · ${plural(b.movies.length, "film")}`;
+    log.textContent = `Sauvegarde Playwatch du ${new Date(b.exportedAt).toLocaleString(LOC)}\n${plural(b.shows.length, "série")} · ${plural(b.movies.length, "film")}`;
     z.insertAdjacentHTML("beforeend", `<button class="btn pri" id="impgo" style="width:100%">Restaurer (fusion avec l'existant)</button>`);
     $("#impgo").onclick = async () => {
       const shows = b.shows.map(s => {
@@ -2432,7 +2439,13 @@ async function startApp() {
   if (!pushDone) pushP.then(quietRender);
   push.refresh();
   // Préférences liées au compte (mode sans spoiler choisi sur un autre appareil, calendrier)
-  store.getUserDoc().then(d => { ui.userDoc = d; if (typeof d.nospoil === "boolean" && d.nospoil !== ui.nospoil) setNoSpoil(d.nospoil, true); syncPresets(d); }).catch(() => { });
+  store.getUserDoc().then(d => {
+    ui.userDoc = d; if (typeof d.nospoil === "boolean" && d.nospoil !== ui.nospoil) setNoSpoil(d.nospoil, true); syncPresets(d);
+    // Langue et pays de l'utilisateur : utilisés par les notifications et le calendrier (serveur)
+    if (store.data.user && !store.data.user.local && (d.lang !== UILANG || d.region !== UIREGION)) store.setUserDoc({ lang: UILANG, region: UIREGION }).catch(() => { });
+  }).catch(() => { });
+  // Retour du paiement Stripe (?paid=1) : le droit Premium arrive par le serveur dans les secondes qui suivent
+  try { const u = new URL(location.href); if (u.searchParams.has("paid")) { u.searchParams.delete("paid"); history.replaceState(history.state, "", u.pathname + u.search + u.hash); toast("Paiement reçu ! Premium s'active dans quelques secondes.", null, null, 6000); } } catch { }
 }
 
 async function boot() {

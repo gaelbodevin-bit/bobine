@@ -3,6 +3,7 @@
 //  • iPhone / web : Stripe (Payment Link), le serveur reçoit le webhook et active le droit
 // Le droit est stocké dans Firestore (entitlements/{uid}) et n'est modifiable que par le serveur.
 import * as store from "./store.js";
+import { LOC } from "./i18n.js";
 
 export const PRODUCT = "premium_lifetime";          // ID du produit intégré dans la Play Console
 export const PRICE_FALLBACK = "1,99 €";             // affiché si le prix Play n'est pas disponible
@@ -27,7 +28,7 @@ export async function price() {
   if (channel() === "play") {
     try {
       const svc = await playService(); const [d] = await svc.getDetails([PRODUCT]);
-      if (d?.price) return priceCache = new Intl.NumberFormat("fr-FR", { style: "currency", currency: d.price.currency }).format(+d.price.value);
+      if (d?.price) return priceCache = new Intl.NumberFormat(LOC, { style: "currency", currency: d.price.currency }).format(+d.price.value);
     } catch { }
   }
   return PRICE_FALLBACK;

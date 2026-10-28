@@ -27,6 +27,5 @@ export const VAPID_PUBLIC_KEY = "BHg7wVb7QbAAHrC4iU9j02tgN2e_JJ6ZbJIW1X9Iq16j4MQ
 //    Laisse vide si tu ne suis pas de jeux : tu pourras aussi la coller dans Profil.
 export const RAWG_KEY = "514c5c676e324962939cb4508cc71585";
 
-// Langue / région des contenus TMDB
-export const LANG = "fr-FR";
-export const REGION = "FR";
+// Langue / région des contenus TMDB : déduites de la langue du téléphone (voir js/i18n.js)
+export { TMDB_LANG as LANG, REGION } from "./i18n.js";
