@@ -36,7 +36,7 @@ async function tmdb(path, params = {}) {
     await slot();
     try {
       const u = new URL("https://api.themoviedb.org/3" + path);
-      u.searchParams.set("language", "fr-FR");
+      u.searchParams.set("language", params.language || "fr-FR");
       for (const [a, b] of Object.entries(params)) u.searchParams.set(a, b);
       const bearer = TMDB_KEY.startsWith("eyJ");
       if (!bearer) u.searchParams.set("api_key", TMDB_KEY);
@@ -84,32 +84,42 @@ async function runUser(uid, subs) {
   ]);
   // Mode sans spoiler (réglé dans l'app) : ni titre ni image d'épisode dans la notification
   const nospoil = !!userSnap.data()?.nospoil;
+  // Langue et pays de l'utilisateur (enregistrés par l'app) : textes et dates de sortie adaptés
+  const en = userSnap.data()?.lang === "en", REG = /^[A-Z]{2}$/.test(userSnap.data()?.region || "") ? userSnap.data().region : (en ? "US" : "FR");
+  const language = en ? "en-US" : "fr-FR";
+  const T = en ? {
+    ep1: (se, n) => `New episode: ${se}${n}`, epN: (k, a, b) => `${k} new episodes: ${a} → ${b}`, cine: "is in theaters today 🍿", vod: "is now streaming 📺",
+    game: n => `🎮 ${n} is out today!`, digest: k => `${k} new things in Playwatch`, more: k => ` and ${k} more`, epName: /^Episode \d+$/
+  } : {
+    ep1: (se, n) => `Nouvel épisode : ${se}${n}`, epN: (k, a, b) => `${k} nouveaux épisodes : ${a} → ${b}`, cine: "sort aujourd'hui au cinéma 🍿", vod: "est disponible en VOD / streaming 📺",
+    game: n => `🎮 ${n} est sorti aujourd'hui !`, digest: k => `${k} nouveautés dans Playwatch`, more: k => ` et ${k} autres`, epName: /^Épisode \d+$/
+  };
   const notes = []; let badge = 0;
 
   await Promise.all(showsSnap.docs.map(async d => {
     const show = d.data();
     if (show.deleted || show.status === "stopped") return;
     try {
-      const t = await tmdb(`/tv/${show.id}`);
+      const t = await tmdb(`/tv/${show.id}`, { language });
       const la = t.last_episode_to_air;
       if (!la?.air_date || la.air_date < SINCE) {
         return;
       }
-      const sea = await tmdb(`/tv/${show.id}/season/${la.season_number}`);
+      const sea = await tmdb(`/tv/${show.id}/season/${la.season_number}`, { language });
       const fresh = (sea.episodes || []).filter(e => e.air_date && e.air_date >= SINCE && e.air_date <= TODAY && !watched(show, e.season_number, e.episode_number));
       if (fresh.length) badge++;
       const already = new Set(show.notified || []);
       const todo = fresh.filter(e => !already.has(SE(e.season_number, e.episode_number)));
       if (!todo.length) return;
       const first = todo[0], last = todo.at(-1);
-      const name = (e) => !nospoil && e.name && !/^Épisode \d+$/.test(e.name) ? ` · ${e.name}` : "";
+      const name = (e) => !nospoil && e.name && !T.epName.test(e.name) ? ` · ${e.name}` : "";
       notes.push({
         kind: "tv", name: t.name,
         payload: {
           title: t.name,
           body: todo.length === 1
-            ? `Nouvel épisode : ${SE(first.season_number, first.episode_number)}${name(first)}`
-            : `${todo.length} nouveaux épisodes : ${SE(first.season_number, first.episode_number)} → ${SE(last.season_number, last.episode_number)}`,
+            ? T.ep1(SE(first.season_number, first.episode_number), name(first))
+            : T.epN(todo.length, SE(first.season_number, first.episode_number), SE(last.season_number, last.episode_number)),
           image: first.still_path && !nospoil ? IMG + "w780" + first.still_path : (t.backdrop_path ? IMG + "w780" + t.backdrop_path : undefined),
           icon: t.poster_path ? IMG + "w185" + t.poster_path : undefined,
           url: APP_URL + "#tv-" + show.id,
@@ -123,13 +133,13 @@ async function runUser(uid, subs) {
   await Promise.all(moviesSnap.docs.map(async d => {
     const m = d.data();
     try {
-      const det = await tmdb(`/movie/${m.id}`, { append_to_response: "release_dates" });
-      const fr = det.release_dates?.results?.find(r => r.iso_3166_1 === "FR");
+      const det = await tmdb(`/movie/${m.id}`, { append_to_response: "release_dates", language });
+      const fr = det.release_dates?.results?.find(r => r.iso_3166_1 === REG);
       const us = det.release_dates?.results?.find(r => r.iso_3166_1 === "US");
       const pick = (src, ty) => src?.release_dates?.find(x => x.type === ty)?.release_date?.slice(0, 10);
       const rel = [
-        ["cine", pick(fr, 3) || pick(fr, 2) || (!fr ? det.release_date : null), "sort aujourd'hui au cinéma 🍿"],
-        ["digital", pick(fr, 4) || pick(us, 4), "est disponible en VOD / streaming 📺"]
+        ["cine", pick(fr, 3) || pick(fr, 2) || (!fr ? det.release_date : null), T.cine],
+        ["digital", pick(fr, 4) || pick(us, 4), T.vod]
       ];
       const already = new Set(m.notified || []);
       for (const [k, date, txt] of rel) {
@@ -155,7 +165,7 @@ async function runUser(uid, subs) {
     if (!released || released < SINCE || released > TODAY) return;
     notes.push({
       kind: "game", name: g.name,
-      payload: { title: g.name, body: `🎮 ${g.name} est sorti aujourd'hui !`, image: g.background_image || undefined, url: APP_URL + "#gm-" + g.id, tag: "gm-" + g.id },
+      payload: { title: g.name, body: T.game(g.name), image: g.background_image || undefined, url: APP_URL + "#gm-" + g.id, tag: "gm-" + g.id },
       mark: () => d.ref.update({ notifiedRelease: true, released, updatedAt: Date.now() })
     });
   }));
@@ -165,8 +175,8 @@ async function runUser(uid, subs) {
   if (notes.length > 4) {
     const names = notes.map(n => n.name);
     await send(subs, {
-      title: `${notes.length} nouveautés dans Playwatch`,
-      body: names.slice(0, 5).join(", ") + (names.length > 5 ? ` et ${names.length - 5} autres` : ""),
+      title: T.digest(notes.length),
+      body: names.slice(0, 5).join(", ") + (names.length > 5 ? T.more(names.length - 5) : ""),
       url: APP_URL + "#upnext", tag: "digest", badge
     });
   } else {
