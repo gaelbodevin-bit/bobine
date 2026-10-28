@@ -83,7 +83,7 @@ const pimg = (path, alt, size = "w342") => path
 // ═════════════ État UI + caches de détails ═════════════
 const ui = { tab: "series", seriesFilter: "watching", sugSeg: "movie", sug: {}, movieSeg: "watchlist", seriesView: (() => { try { return localStorage.getItem("bobine:sview") || "grid"; } catch { return "grid"; } })(), q: "", pushStatus: null, mode: null };
 ui.nospoil = (() => { try { return localStorage.getItem("bobine:nospoil") === "1"; } catch { return false; } })();
-const APP_V = "v43";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
+const APP_V = "v44";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
 const ADMINS = ["gael.bodevin@gmail.com", "bluecellproduction@gmail.com", "fast.and.spermious@gmail.com"];
 const isAdmin = () => ADMINS.includes((store.data.user?.email || "").toLowerCase());
 
@@ -508,7 +508,11 @@ function calRow(x, past) {
 // ═════════════ Vue : Séries ═════════════
 const SERIES_F = [["watching", "En cours"], ["later", "À voir"], ["waiting", "À jour"], ["finished", "Terminées"], ["stopped", "Arrêtées"], ["all", "Toutes"]];
 const MOVIE_F = [["watchlist", "À voir"], ["watched", "Vus"]];
-const viewToggle = (dice = "") => `<div style="display:flex;gap:8px">${dice}<button class="iconbtn" data-a="sview" aria-label="Changer l'affichage">${ui.seriesView === "grid" ? I.list : I.grid}</button>${profileBtn}</div>`;
+// Mode d'affichage mémorisé pour chaque onglet ET chaque catégorie (ex. Séries › En cours en liste, Séries › Terminées en grille)
+ui.views = (() => { try { const o = JSON.parse(localStorage.getItem("bobine:views") || "{}"); return o && typeof o === "object" ? o : {}; } catch { return {}; } })();
+const viewKey = () => ui.tab === "movies" ? "movies:" + ui.movieSeg : ui.tab === "games" ? "games:" + ui.gameFilter : "series:" + ui.seriesFilter;
+const viewOf = (k = viewKey()) => ui.views[k] || ui.seriesView || "grid";
+const viewToggle = (dice = "") => `<div style="display:flex;gap:8px">${dice}<button class="iconbtn" data-a="sview" aria-label="${viewOf() === "grid" ? "Afficher en liste" : "Afficher en grille"}">${viewOf() === "grid" ? I.list : I.grid}</button>${profileBtn}</div>`;
 function vSeries(v) {
   const toggle = viewToggle(store.data.shows.size > 1 ? `<button class="iconbtn roul" data-a="sroulette" aria-label="Roulette : une série au hasard">${I.dice}</button>` : "");
   if (!store.data.ready) { patch(v, top("Séries", "", toggle) + skel()); return; }
@@ -531,7 +535,7 @@ function vSeries(v) {
   if (ui.seriesFilter === "watching") {
     const left = items.reduce((n, x) => n + (x.p?.remaining || 0), 0);
     if (!items.length) { patch(v, h + `<div class="empty" style="padding:24px">${I.check}<h3>À jour !</h3><p>Rien à rattraper pour l'instant.</p></div>`); return; }
-    if (ui.seriesView === "list") { patch(v, h + items.map(upCard).join("")); return; }
+    if (viewOf() === "list") { patch(v, h + items.map(upCard).join("")); return; }
     list = items;
   } else {
     const all = [...c.watching, ...c.waiting, ...c.later, ...c.finished, ...c.stopped];
@@ -548,7 +552,7 @@ function vSeries(v) {
     if (x.s.status === "stopped") return "Arrêtée";
     return x.t ? (STATUS_FR[x.t.status] || "") : "";
   };
-  if (ui.seriesView === "list") {
+  if (viewOf() === "list") {
     h += list.map(x => {
       const p = x.t ? progress(x.s, x.t) : null;
       return `<button class="li" data-a="tv" data-id="${x.s.id}"><div class="ps">${pimg(x.t?.poster_path || x.s.poster_path, x.t?.name || x.s.name, "w154")}</div>
@@ -651,7 +655,7 @@ function vMovies(v) {
   const wl = all.filter(m => m.status === "watchlist").sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
   let h = top("Films", "", viewToggle());
   h += `<div class="segrow"><div class="seg"><button data-a="mseg" data-v="watchlist" class="${ui.movieSeg === "watchlist" ? "on" : ""}">À voir</button><button data-a="mseg" data-v="watched" class="${ui.movieSeg === "watched" ? "on" : ""}">Vus</button></div>${ui.movieSeg !== "watched" && wl.length > 1 ? `<button class="iconbtn roul" data-a="roulette" aria-label="Roulette : un film au hasard">${I.dice}</button>` : ""}</div>`;
-  const list = ui.seriesView === "list";
+  const list = viewOf() === "list";
   const star = m => m.rating ? `<span class="badge" style="width:auto;padding:0 6px;border-radius:8px;font-size:11px;font-weight:800">${m.rating}★</span>` : "";
   const cell = (m, sub, fresh) => list
     ? `<button class="li" data-a="mv" data-id="${m.id}"><div class="ps">${pimg(m.poster_path, m.title, "w154")}</div><div class="tx"><div class="n">${esc(m.title)}${fresh ? ` <span class="tagnew">SORTIE</span>` : ""}</div><div class="d">${esc(sub)}${m.rating ? ` · <span style="color:var(--ac)">${"★".repeat(m.rating)}</span>` : ""}</div></div></button>`
@@ -1266,7 +1270,7 @@ function vGames(v) {
   const list = (ui.gameFilter === "all" ? all : all.filter(g => gst(g) === ui.gameFilter)).sort((a, b) => (b.lastAt || b.addedAt || 0) - (a.lastAt || a.addedAt || 0));
   if (!all.length) { patch(v, h + `<div class="empty">${I.pad}<h3>Ludothèque vide</h3><p>Ajoute tes jeux depuis Découvrir.</p><div class="btns"><button class="btn pri" data-a="tab" data-v="gdiscover">${I.search}Découvrir</button></div></div>`); return; }
   if (!list.length) { patch(v, h + `<div class="empty">${I.pad}<h3>Rien ici</h3><p>Aucun jeu dans cette catégorie.</p></div>`); return; }
-  if (ui.seriesView === "list") {
+  if (viewOf() === "list") {
     h += list.map(g => `<button class="li" data-a="game" data-id="${g.id}"><div class="ps">${gcover(g.background_image, g.name)}</div><div class="tx"><div class="n">${esc(g.name)}</div>
       <div class="d">${esc([g.platform, year(g.released), ui.gameFilter === "all" ? G_LABEL[gst(g)] : ""].filter(Boolean).join(" · "))}${g.rating ? ` · <span style="color:var(--ac)">${"★".repeat(g.rating)}</span>` : ""}</div></div></button>`).join("");
   } else {
@@ -1361,6 +1365,37 @@ function vGUpcoming(v) {
 }
 
 let gSearchT, gSeq = 0;
+// Filtres jeux : plateforme, genre, tri, « pas dans ma liste » — appliqués à la recherche (côté RAWG) et à la découverte
+const GPLAT = [["1", "PC"], ["2", "PlayStation"], ["3", "Xbox"], ["7", "Nintendo"], ["4,8", "Mobile"], ["5", "Mac"]];
+const GGEN = [["action", "Action"], ["adventure", "Aventure"], ["role-playing-games-rpg", "RPG"], ["shooter", "Tir"], ["strategy", "Stratégie"], ["simulation", "Simulation"], ["puzzle", "Réflexion"], ["platformer", "Plateformes"], ["racing", "Course"], ["sports", "Sport"], ["fighting", "Combat"], ["indie", "Indé"], ["family", "Famille"], ["massively-multiplayer", "MMO"], ["casual", "Casual"]];
+const GSORT = [["-added", "Les plus joués"], ["-metacritic", "Les mieux notés"], ["-released", "Les plus récents"]];
+ui.gfilt = (() => { try { const o = JSON.parse(localStorage.getItem("bobine:gfilt") || "{}"); return o && typeof o === "object" ? o : {}; } catch { return {}; } })();
+ui.gfd = {};
+const gfParams = () => { const f = ui.gfilt, o = {}; if (f.p) o.parent_platforms = f.p; if (f.g) o.genres = f.g; return o; };
+function setGFilter(k, v) {
+  if (v === "" || v == null || v === false) delete ui.gfilt[k]; else ui.gfilt[k] = v;
+  try { localStorage.setItem("bobine:gfilt", JSON.stringify(ui.gfilt)); } catch { }
+  if (ui.gq?.trim()) doGSearch(); else renderGResults();
+}
+function gFilterBar() {
+  const f = ui.gfilt, name = (list, v) => list.find(x => x[0] === v)?.[1];
+  const sel = (k, label, list, all) => `<label class="fchip ${f[k] ? "on" : ""}"><span>${esc(name(list, f[k]) || label)}</span>${I.cd}<select data-gf="${k}" aria-label="${label}"><option value="">${all}</option>${list.map(([v, l]) => `<option value="${v}" ${f[k] === v ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>`;
+  const any = f.p || f.g || f.sort || f.hide;
+  return `<div class="fbar">${sel("p", "Plateforme", GPLAT, "Toutes les plateformes")}${sel("g", "Genre", GGEN, "Tous les genres")}${ui.gq?.trim() ? sel("sort", "Tri", GSORT, "Pertinence") : ""}<button class="fchip ${f.hide ? "on" : ""}" data-a="gfhide">${f.hide ? I.check : ""}Pas dans ma liste</button>${any ? `<button class="fchip clr" data-a="gfclear">${I.x}Effacer</button>` : ""}</div>`;
+}
+// Découverte filtrée (plateforme et/ou genre choisis) : 3 rangées demandées directement à RAWG
+function gFilteredRows() {
+  const key = JSON.stringify(gfParams()), td = isoToday(), from = new Date(Date.now() - 180 * DAY).toISOString().slice(0, 10);
+  const defs = [["played", "Les plus joués", { ordering: "-added" }], ["rated", "Les mieux notés", { metacritic: "75,100", ordering: "-metacritic" }], ["recent", "Sorties récentes", { dates: `${from},${td}`, ordering: "-added" }]];
+  const C = ui.gfd[key] || (ui.gfd[key] = {});
+  let h = "";
+  for (const [k, title, extra] of defs) {
+    if (!C[k]) { C[k] = "loading"; rawg.list({ ...gfParams(), ...extra }, 24).then(r => { C[k] = r; r.forEach(g => gameLite.set(g.id, g)); if (ui.tab === "gdiscover") renderGResults(); }).catch(e => { gameErr(e); C[k] = []; if (ui.tab === "gdiscover") renderGResults(); }); }
+    const data = Array.isArray(C[k]) ? C[k].filter(g => g.background_image && (!ui.gfilt.hide || !store.data.games.has(g.id))) : null;
+    h += sec(title) + (!data ? skRow() : data.length ? gRow(data.slice(0, 20)) : `<div class="sugsub">Aucun jeu avec ces filtres.</div>`);
+  }
+  return h;
+}
 function vGExplore(v, force) {
   if (!force && $("#gq")) { renderGResults(); return; }
   let h = top("Découvrir", "", profileBtn);
@@ -1381,19 +1416,22 @@ async function doGSearch() {
   const q = ui.gq.trim(); const seq = ++gSeq;
   if (!q) { ui.gres = null; return renderGResults(); }
   ui.gres = "loading"; renderGResults();
-  try { const r = await rawg.search(q); r.forEach(g => gameLite.set(g.id, g)); if (seq === gSeq) { ui.gres = r; renderGResults(); } }
+  try { const f = ui.gfilt, extra = { ...gfParams(), ...(f.sort ? { ordering: f.sort } : {}) }; const r = Object.keys(extra).length ? await rawg.list({ search: q, search_precise: "true", ...extra }, 6) : await rawg.search(q); r.forEach(g => gameLite.set(g.id, g)); if (seq === gSeq) { ui.gres = r; renderGResults(); } }
   catch (e) { gameErr(e); if (seq === gSeq) { ui.gres = []; renderGResults(); } }
 }
 function renderGResults() {
   const r = $("#gresults"); if (!r) return;
-  if (ui.gres === "loading") { r.innerHTML = `<div class="empty" style="padding:30px">Recherche…</div>`; return; }
+  const bar = gFilterBar();
+  if (ui.gres === "loading") { r.innerHTML = bar + `<div class="empty" style="padding:30px">Recherche…</div>`; return; }
   if (Array.isArray(ui.gres)) {
-    r.innerHTML = ui.gres.length ? ui.gres.map(g => { const lib = store.data.games.has(g.id); return `<div class="li" data-a="game" data-id="${g.id}"><div class="ps">${gcover(g.background_image, g.name)}</div>
+    const res = ui.gfilt.hide ? ui.gres.filter(g => !store.data.games.has(g.id)) : ui.gres;
+    r.innerHTML = bar + (res.length ? res.map(g => { const lib = store.data.games.has(g.id); return `<div class="li" data-a="game" data-id="${g.id}"><div class="ps">${gcover(g.background_image, g.name)}</div>
       <div class="tx"><div class="n">${esc(g.name)}</div><div class="d">${esc([year(g.released) || (g.tba ? "À venir" : ""), g.platforms.slice(0, 3).join(", ")].filter(Boolean).join(" · "))}</div>${g.metacritic ? `<div class="d"><span class="tag">MC ${g.metacritic}</span></div>` : ""}</div>
       <button class="add ${lib ? "on" : ""}" data-a="gquick" data-id="${g.id}" aria-label="Ajouter">${lib ? I.check : I.plus}</button></div>`; }).join("")
-      : `<div class="empty" style="padding:30px">Aucun jeu pour « ${esc(ui.gq)} »</div>`;
+      : `<div class="empty" style="padding:30px">Aucun jeu pour « ${esc(ui.gq)} »${ui.gres.length || ui.gfilt.p || ui.gfilt.g ? " avec ces filtres" : ""}</div>`);
     return;
   }
+  if (ui.gfilt.p || ui.gfilt.g) { r.innerHTML = bar + gFilteredRows(); return; }
   const d = ui.gdisc || {};
   const block = ([k, title, sub]) => {
     const data = ui.gsug[k];
@@ -1405,7 +1443,7 @@ function renderGResults() {
   const defs = gSugDefs(), fy = defs.find(x => x[0] === "foryou");
   const trend = sec("Tendances") + `<div class="sugsub">Les sorties des 4 derniers mois les plus ajoutées</div>` + (!d.trend ? skRow() : gRow(d.trend.filter(g => g.background_image)));
   // Ordre : pour toi → plus joués → mieux notés → tendances → le reste
-  r.innerHTML = (fy ? block(fy) : "") + defs.filter(x => x[0] === "played" || x[0] === "rated").map(block).join("") + trend
+  r.innerHTML = bar + (fy ? block(fy) : "") + defs.filter(x => x[0] === "played" || x[0] === "rated").map(block).join("") + trend
     + defs.filter(x => !["foryou", "played", "rated"].includes(x[0])).map(block).join("");
 }
 
@@ -1429,7 +1467,7 @@ function gameSheet(id, sh) {
     <div class="btns">${g ? `<button class="btn pri" data-a="gstatus" data-id="${id}">${G_ICON[gst(g)] || ""}${esc(G_LABEL[gst(g)] || "Statut")} ▾</button>`
       : future ? `<button class="btn pri" data-a="gadd" data-v="backlog" data-id="${id}">${I.plus}À jouer à sa sortie</button>`
       : `<button class="btn pri" data-a="gadd" data-v="backlog" data-id="${id}">${I.plus}À jouer</button><button class="btn" data-a="gadd" data-v="playing" data-id="${id}">${I.play}J'y joue</button><button class="btn" data-a="gstatus" data-id="${id}">${I.more}</button>`}</div>
-    ${g ? `<label class="hours" for="gh-${id}">${I.clock}<span>Heures de jeu <small>${gst(g) === "beaten" ? "(pour tes stats)" : "(optionnel)"}</small></span><input id="gh-${id}" type="text" inputmode="decimal" autocomplete="off" maxlength="6" placeholder="${d.playtime ? "~" + d.playtime : "0"}" value="${g.hours != null ? String(g.hours).replace(".", ",") : ""}" data-hours="${id}"><b>h</b></label>` : ""}
+    ${g ? `<label class="hours" for="gh-${id}">${I.clock}<span>Heures de jeu${gst(g) === "beaten" ? "" : ` <small>(optionnel)</small>`}</span><input id="gh-${id}" type="text" inputmode="decimal" autocomplete="off" maxlength="6" placeholder="${d.playtime ? "~" + d.playtime : "0"}" value="${g.hours != null ? String(g.hours).replace(".", ",") : ""}" data-hours="${id}"><b>h</b></label>` : ""}
     ${g ? `<div style="color:var(--mu);font-size:13px">Ta note :</div><div class="stars">${[1, 2, 3, 4, 5].map(n => `<button data-a="grate" data-id="${id}" data-v="${n}" class="${(g.rating || 0) >= n ? "on" : ""}" aria-label="${n} étoiles">${I.star}</button>`).join("")}</div>` : ""}
     ${plats.length ? `<div style="color:var(--mu);font-size:13px;margin-top:8px">${g ? "Tu y joues sur :" : "Plateformes"}</div><div class="gen">${plats.map(p => g ? `<button class="pchip ${g.platform === p ? "on" : ""}" data-a="gplat" data-id="${id}" data-v="${esc(p)}">${esc(p)}</button>` : `<span>${esc(p)}</span>`).join("")}</div>` : ""}
     ${d.genres?.length ? `<div class="gen">${d.genres.map(x => `<span>${esc(x)}</span>`).join("")}</div>` : ""}
@@ -1905,6 +1943,8 @@ const A = {
   },
   saveRawg() { rawg.setKey($("#rawgk").value); ui.gsug = {}; ui.gdisc = null; toast("Clé RAWG enregistrée"); },
   gfilter: el => { ui.gameFilter = el.dataset.v; renderView(); },
+  gfhide: () => setGFilter("hide", !ui.gfilt.hide),
+  gfclear: () => { ui.gfilt = {}; try { localStorage.removeItem("bobine:gfilt"); } catch { } if (ui.gq?.trim()) doGSearch(); else renderGResults(); },
   game: el => openGame(+el.dataset.id),
   async gadd(el) {
     const id = +el.dataset.id; const st = el.dataset.v;
@@ -1938,7 +1978,7 @@ const A = {
     const pick = pool[Math.floor(Math.random() * pool.length)];
     const b = $(".roul"); b?.classList.add("spin"); setTimeout(() => { b?.classList.remove("spin"); openTv(pick.s.id); toast(`🎲 Ce soir : ${pick.t?.name || pick.s.name}`); }, 650);
   },
-  sview: () => { ui.seriesView = ui.seriesView === "grid" ? "list" : "grid"; try { localStorage.setItem("bobine:sview", ui.seriesView); } catch { } renderView(); },
+  sview: () => { const k = viewKey(); ui.views[k] = viewOf(k) === "grid" ? "list" : "grid"; try { localStorage.setItem("bobine:views", JSON.stringify(ui.views)); } catch { } renderView(); },
   lmore: el => loadMoreLatest(el.dataset.v),
   fhide: el => setFilter(el.dataset.v, "hide", !df(el.dataset.v).hide),
   fclear: el => { ui.dfilt[el.dataset.v] = {}; saveDf(); loadLatest(el.dataset.v); renderResults(); },
@@ -2145,7 +2185,7 @@ document.addEventListener("focusout", () => setTimeout(() => { if (!isTyping(doc
 document.addEventListener("input", e => { if (e.target.closest?.(".srow")) syncSrow(); });
 document.addEventListener("touchmove", () => { const a = document.activeElement; if (a && (a.id === "q" || a.id === "gq")) a.blur(); }, { passive: true });
 // Filtres (listes déroulantes des chips)
-document.addEventListener("change", e => { const t = e.target; if (t?.dataset?.f && t.dataset.k) setFilter(t.dataset.k, t.dataset.f, t.value); });
+document.addEventListener("change", e => { const t = e.target; if (t?.dataset?.f && t.dataset.k) setFilter(t.dataset.k, t.dataset.f, t.value); else if (t?.dataset?.gf) setGFilter(t.dataset.gf, t.value); });
 // Défilement : la barre de recherche se cache en descendant et revient en remontant ; bouton « remonter en haut »
 const toTop = document.createElement("button");
 toTop.className = "totop"; toTop.dataset.a = "totop"; toTop.setAttribute("aria-label", "Remonter en haut"); toTop.innerHTML = I.cu;
