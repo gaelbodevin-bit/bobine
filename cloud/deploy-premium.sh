@@ -18,7 +18,7 @@ unset SK WH
 echo "Secrets enregistrés."
 
 echo "── 2/4 Fonction stripeWebhook ──"
-(cd functions && npm install --silent --no-audit --no-fund)
+(cd functions && npm install --no-audit --no-fund)
 if firebase deploy --only functions:stripeWebhook --project "$P" --non-interactive --force; then
   echo "stripeWebhook redéployée (nouveau code + nouveaux secrets)."
 else
