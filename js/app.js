@@ -83,7 +83,7 @@ const pimg = (path, alt, size = "w342") => path
 // ═════════════ État UI + caches de détails ═════════════
 const ui = { tab: "series", seriesFilter: "watching", sugSeg: "movie", sug: {}, movieSeg: "watchlist", seriesView: (() => { try { return localStorage.getItem("bobine:sview") || "grid"; } catch { return "grid"; } })(), q: "", pushStatus: null, mode: null };
 ui.nospoil = (() => { try { return localStorage.getItem("bobine:nospoil") === "1"; } catch { return false; } })();
-const APP_V = "v42";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
+const APP_V = "v43";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
 const ADMINS = ["gael.bodevin@gmail.com", "bluecellproduction@gmail.com", "fast.and.spermious@gmail.com"];
 const isAdmin = () => ADMINS.includes((store.data.user?.email || "").toLowerCase());
 
@@ -694,23 +694,43 @@ const DSEGS = [["sel", "Sélection"], ["anime", "Animés"], ["tv", "Séries"], [
 ui.dseg = (() => { try { const v = localStorage.getItem("bobine:dseg"); return DSEGS.some(x => x[0] === v) ? v : "sel"; } catch { return "sel"; } })();
 ui.latest = {};
 const ago = n => new Date(Date.now() - n * DAY).toISOString().slice(0, 10);
+// Filtres par onglet (genre, plateforme, sortie pour les films, masquer ma liste) — mémorisés sur l'appareil
+const GENRES = {
+  anime: [[10759, "Action & aventure"], [35, "Comédie"], [18, "Drame"], [10765, "SF & fantastique"], [9648, "Mystère"], [80, "Crime"], [10751, "Familial"]],
+  tv: [[10759, "Action & aventure"], [35, "Comédie"], [80, "Crime"], [18, "Drame"], [9648, "Mystère"], [10765, "SF & fantastique"], [10751, "Familial"], [99, "Documentaire"], [10768, "Guerre & politique"], [37, "Western"]],
+  movie: [[28, "Action"], [12, "Aventure"], [16, "Animation"], [35, "Comédie"], [80, "Crime"], [99, "Documentaire"], [18, "Drame"], [10751, "Familial"], [14, "Fantastique"], [27, "Horreur"], [9648, "Mystère"], [10749, "Romance"], [878, "Science-fiction"], [53, "Thriller"], [36, "Histoire"], [10752, "Guerre"]]
+};
+const PROV_MAIN = [[8, "Netflix"], [119, "Prime Video"], [337, "Disney+"], [381, "Canal+"], [1899, "Max"], [350, "Apple TV+"], [531, "Paramount+"]];
+const PROVS = { anime: [[283, "Crunchyroll"], [415, "ADN"], [8, "Netflix"], [119, "Prime Video"], [337, "Disney+"]], tv: PROV_MAIN, movie: PROV_MAIN };
+const MSRC = [["vod", "VOD / streaming"], ["cine", "Au cinéma"]];
+ui.dfilt = (() => { try { const o = JSON.parse(localStorage.getItem("bobine:dfilt") || "{}"); return o && typeof o === "object" ? o : {}; } catch { return {}; } })();
+const df = kind => ui.dfilt[kind] || (ui.dfilt[kind] = {});
+const saveDf = () => { try { localStorage.setItem("bobine:dfilt", JSON.stringify(ui.dfilt)); } catch { } };
+const fkey = kind => { const f = df(kind); return `${kind}|${f.g || ""}|${f.p || ""}`; };   // genre et plateforme filtrent côté TMDB
+function setFilter(kind, k, v) {
+  const f = df(kind);
+  if (v === "" || v == null || v === false) delete f[k]; else f[k] = v;
+  saveDf(); loadLatest(kind); renderResults();
+}
 async function loadLatest(kind) {
   if (kind === "sel") return;
-  const L = ui.latest[kind];
+  const key = fkey(kind), f = { ...df(kind) };
+  const L = ui.latest[key];
   if (L && (L === "loading" || Date.now() - L.at < 3 * 3600e3)) return;
-  ui.latest[kind] = "loading";
-  try { ui.latest[kind] = { at: Date.now(), win: 1, items: kind === "movie" ? await latestMovies() : await latestEps(kind, 0) }; }
-  catch (e) { onErr(e); ui.latest[kind] = { at: Date.now(), items: kind === "movie" ? { vod: [], cine: [] } : [] }; }
-  if (ui.tab === "discover" && ui.dseg === kind && !Array.isArray(ui.results)) renderResults();
+  ui.latest[key] = "loading";
+  try { ui.latest[key] = { at: Date.now(), win: 1, items: kind === "movie" ? await latestMovies(f) : await latestEps(kind, 0, new Set(), f) }; }
+  catch (e) { onErr(e); ui.latest[key] = { at: Date.now(), items: kind === "movie" ? { vod: [], cine: [] } : [] }; }
+  if (ui.tab === "discover" && ui.dseg === kind && fkey(kind) === key && !Array.isArray(ui.results)) renderResults();
 }
 // Épisodes sortis récemment : animés japonais, ou séries (hors animation, talk-shows, info, télé-réalité, soaps).
 // Par tranches de 10 jours (3 tranches = 30 jours) : la tranche 0 au chargement, les suivantes avec « Voir plus ».
 // Chaque série n'apparaît qu'une fois, à la date de son dernier épisode sorti.
 const WIN = 10, WINS = 3;
 const winRange = w => ({ from: ago(WIN * w + WIN - 1), to: w ? ago(WIN * w) : isoToday() });
-async function latestEps(kind, w, skip = new Set()) {
+async function latestEps(kind, w, skip = new Set(), f = {}) {
   const { from, to } = winRange(w);
-  const base = kind === "anime" ? { with_genres: "16", with_original_language: "ja" } : { without_genres: "16,10763,10764,10766,10767", "vote_count.gte": "30" };
+  const base = kind === "anime" ? { with_genres: f.g ? `16,${f.g}` : "16", with_original_language: "ja" } : { without_genres: "16,10763,10764,10766,10767", "vote_count.gte": "30", ...(f.g ? { with_genres: String(f.g) } : {}) };
+  if (f.p) Object.assign(base, { with_watch_providers: String(f.p), watch_region: "FR" });
   const pages = await Promise.all([1, 2, 3].map(page => tmdb.get("/discover/tv", { ...base, "air_date.gte": from, "air_date.lte": to, sort_by: "popularity.desc", page }, { ttl: 3 }).catch(() => ({}))));
   const seen = new Set(skip), list = pages.flatMap(p => p.results || []).filter(x => !seen.has(x.id) && seen.add(x.id)).slice(0, 48);
   const det = await Promise.all(list.map(x => tmdb.tv(x.id).catch(() => null)));
@@ -719,19 +739,23 @@ async function latestEps(kind, w, skip = new Set()) {
     .sort((a, b) => a.la.air_date < b.la.air_date ? 1 : a.la.air_date > b.la.air_date ? -1 : b.pop - a.pop);
 }
 async function loadMoreLatest(kind) {
-  const L = ui.latest[kind]; if (!L || L === "loading" || L.more || L.win >= WINS) return;
+  const L = ui.latest[fkey(kind)]; if (!L || L === "loading" || L.more || L.win >= WINS) return;
   L.more = true; renderResults();
-  try { const add = await latestEps(kind, L.win, new Set(L.items.map(x => x.id))); L.items = [...L.items, ...add]; L.win++; }
+  try { const add = await latestEps(kind, L.win, new Set(L.items.map(x => x.id)), { ...df(kind) }); L.items = [...L.items, ...add]; L.win++; }
   catch (e) { onErr(e); }
   L.more = false;
   if (ui.tab === "discover" && ui.dseg === kind && !Array.isArray(ui.results)) renderResults();
 }
 // Films : nouveautés VOD / streaming en France (30 j) et films à l'affiche
-async function latestMovies() {
+async function latestMovies(f = {}) {
   const td = isoToday(), from = ago(30);
+  const vq = { region: "FR", with_release_type: "4", "release_date.gte": from, "release_date.lte": td, sort_by: "popularity.desc" };
+  if (f.g) vq.with_genres = String(f.g);
+  if (f.p) Object.assign(vq, { with_watch_providers: String(f.p), watch_region: "FR" });
   const [vodP, ...cineP] = await Promise.all([
-    tmdb.get("/discover/movie", { region: "FR", with_release_type: "4", "release_date.gte": from, "release_date.lte": td, sort_by: "popularity.desc" }, { ttl: 6 }),
-    ...[1, 2].map(page => tmdb.get("/movie/now_playing", { region: "FR", page }, { ttl: 6 }))
+    tmdb.get("/discover/movie", vq, { ttl: 6 }),
+    // Au cinéma : pas de plateforme possible ; le genre est filtré ici
+    ...(f.p ? [] : [1, 2].map(page => tmdb.get("/movie/now_playing", { region: "FR", page }, { ttl: 6 }).then(r => ({ results: (r.results || []).filter(x => !f.g || (x.genre_ids || []).includes(+f.g)) }))))
   ]);
   const det = async arr => (await Promise.all(arr.slice(0, 24).map(x => tmdb.movie(x.id).then(d => ({ ...x, d }), () => null)))).filter(Boolean);
   const seenC = new Set();
@@ -749,21 +773,31 @@ function epCard(x) {
   const fresh = daysFrom(la.air_date) === 0;   // du jour seulement : les titres « Hier »… suffisent pour le reste
   return `<button class="gp" data-a="tv" data-id="${x.id}"><div class="p">${pimg(x.t.poster_path, x.t.name)}<span class="ep">${nSeasons(x.t) > 1 ? `S${la.season_number} · ` : ""}Ép. ${la.episode_number}</span>${fresh ? `<span class="newb">NOUVEAU</span>` : ""}${s ? `<span class="badge">${I.check}</span>` : ""}</div><div class="t">${esc(x.t.name)}</div><div class="s">${!hide && la.name && !/^Épisode \d+$/.test(la.name) ? esc(la.name) : (x.t.networks?.[0] ? esc(x.t.networks[0]) : "&nbsp;")}</div></button>`;
 }
+function filterBar(kind) {
+  const f = df(kind), name = (list, v) => list.find(x => String(x[0]) === String(v))?.[1];
+  const sel = (k, label, list, all) => `<label class="fchip ${f[k] ? "on" : ""}"><span>${esc(name(list, f[k]) || label)}</span>${I.cd}<select data-f="${k}" data-k="${kind}" aria-label="${label}"><option value="">${all}</option>${list.map(([v, l]) => `<option value="${v}" ${String(f[k]) === String(v) ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>`;
+  const any = f.g || f.p || f.hide || f.src;
+  return `<div class="fbar">${kind === "movie" ? sel("src", "Sortie", MSRC, "VOD et cinéma") : ""}${sel("p", "Plateforme", PROVS[kind], "Toutes les plateformes")}${sel("g", "Genre", GENRES[kind], "Tous les genres")}<button class="fchip ${f.hide ? "on" : ""}" data-a="fhide" data-v="${kind}">${f.hide ? I.check : ""}Pas dans ma liste</button>${any ? `<button class="fchip clr" data-a="fclear" data-v="${kind}">${I.x}Effacer</button>` : ""}</div>`;
+}
 function latestHtml(kind) {
-  const L = ui.latest[kind];
+  const L = ui.latest[fkey(kind)], f = df(kind);
   const intro = { anime: "Les derniers épisodes d'animés japonais, du plus récent au plus ancien.", tv: "Les derniers épisodes de séries, du plus récent au plus ancien.", movie: "Les films arrivés ce mois-ci en VOD / streaming en France, et ceux à l'affiche au cinéma." }[kind];
-  let h = `<div class="sugsub" style="margin:-4px 0 10px">${intro}</div>`;
+  let h = filterBar(kind) + `<div class="sugsub" style="margin:-4px 0 10px">${intro}</div>`;
   if (!L || L === "loading") return h + `<div class="grid">${Array.from({ length: 6 }, () => `<div class="gp"><div class="p sk"></div></div>`).join("")}</div>`;
+  const keep = x => !f.hide || !(kind === "movie" ? store.data.movies.has(x.id) : store.data.shows.has(x.id));
+  const none = `<div class="empty" style="padding:30px">Rien ne correspond à ces filtres.<br><button class="linkbtn" data-a="fclear" data-v="${kind}" style="display:inline;width:auto">Effacer les filtres</button></div>`;
   if (kind === "movie") {
+    const vod = f.src === "cine" ? [] : L.items.vod.filter(keep), cine = f.src === "vod" ? [] : L.items.cine.filter(keep);
     const cell = (x, lbl) => `<button class="gp" data-a="mv" data-id="${x.id}"><div class="p">${pimg(x.d.poster_path || x.poster_path, x.d.title || x.title)}${daysFrom(x.date) >= -6 ? `<span class="newb">NOUVEAU</span>` : ""}${store.data.movies.has(x.id) ? `<span class="badge">${I.check}</span>` : ""}</div><div class="t">${esc(x.d.title || x.title)}</div><div class="s">${lbl} ${esc(fmtShort(x.date))}</div></button>`;
-    const { vod, cine } = L.items;
-    if (!vod.length && !cine.length) return h + `<div class="empty" style="padding:30px">Rien de nouveau pour l'instant.</div>`;
+    if (!vod.length && !cine.length) return h + (f.p && f.src === "cine" ? `<div class="empty" style="padding:30px">Les films au cinéma ne sont sur aucune plateforme : choisis « VOD et cinéma » ou retire la plateforme.</div>` : f.g || f.p || f.hide || f.src ? none : `<div class="empty" style="padding:30px">Rien de nouveau pour l'instant.</div>`);
     if (vod.length) h += sec("Nouveau en VOD / streaming", vod.length) + `<div class="grid">${vod.map(x => cell(x, "VOD")).join("")}</div>`;
     if (cine.length) h += sec("À l'affiche au cinéma", cine.length) + `<div class="grid">${cine.map(x => cell(x, "Ciné")).join("")}</div>`;
     return h;
   }
-  if (!L.items.length && L.win >= WINS) return h + `<div class="empty" style="padding:30px">Aucun épisode sorti récemment.</div>`;
-  const groups = new Map(); L.items.forEach(x => { const k = x.la.air_date; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(x); });
+  const items = L.items.filter(keep);
+  if (!items.length && L.win >= WINS) return h + (f.g || f.p || f.hide ? none : `<div class="empty" style="padding:30px">Aucun épisode sorti récemment.</div>`);
+  const groups = new Map(); items.forEach(x => { const k = x.la.air_date; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(x); });
+  if (!items.length) h += `<div class="sugsub" style="padding:14px 0">Rien sur cette période avec ces filtres : touche « Voir plus » pour remonter plus loin.</div>`;
   for (const [date, arr] of groups) h += `<h3 class="lday">${esc(dayLabel(date))}<span>${arr.length}</span></h3><div class="grid lgrid">${arr.map(epCard).join("")}</div>`;
   if (L.win < WINS) h += `<button class="btn ghost lmore" data-a="lmore" data-v="${kind}" ${L.more ? "disabled" : ""} style="width:100%;margin:18px 0 8px">${L.more ? "Chargement…" : `Voir plus (jusqu'au ${esc(fmtLong(winRange(L.win).from).replace(/^\S+ /, ""))})`}</button>`;
   return h;
@@ -790,13 +824,18 @@ function renderResults() {
   const r = $("#results"); if (!r) return;
   if (ui.results === "loading") { r.innerHTML = `<div class="empty" style="padding:30px">Recherche…</div>`; return; }
   if (Array.isArray(ui.results)) {
-    r.innerHTML = ui.results.length ? ui.results.map(x => {
+    const isAnime = x => (x.genre_ids || []).includes(16) && x.original_language === "ja";
+    const TYPES = [["all", "Tout", () => true], ["movie", "Films", x => x.media_type === "movie"], ["tv", "Séries", x => x.media_type === "tv" && !isAnime(x)], ["anime", "Animés", isAnime]];
+    const qt = TYPES.find(t => t[0] === ui.qtype) || TYPES[0];
+    const list = ui.results.filter(qt[2]);
+    const chips = ui.results.length ? `<div class="fbar">${TYPES.map(([k, l, fn]) => { const n = ui.results.filter(fn).length; return `<button class="fchip ${qt[0] === k ? "on" : ""}" data-a="qtype" data-v="${k}" ${n || k === "all" ? "" : "disabled"}>${l}${k === "all" ? "" : ` <small>${n}</small>`}</button>`; }).join("")}</div>` : "";
+    r.innerHTML = chips + (list.length ? list.map(x => {
       const title = x.name || x.title; const d = x.first_air_date || x.release_date;
       const lib = inLib(x);
       return `<div class="li" data-a="${x.media_type === "tv" ? "tv" : "mv"}" data-id="${x.id}"><div class="ps">${pimg(x.poster_path, title, "w154")}</div>
         <div class="tx"><div class="n">${esc(title)}</div><div style="font-size:13px;color:var(--mu);margin:1px 0 3px"><span class="tag">${x.media_type === "tv" ? "Série" : "Film"}</span>${year(d)}</div><div class="d">${esc(x.overview || "")}</div></div>
         <button class="add ${lib ? "on" : ""}" data-a="quick" data-t="${x.media_type}" data-id="${x.id}" aria-label="Ajouter">${lib ? I.check : I.plus}</button></div>`;
-    }).join("") : `<div class="empty" style="padding:30px">Aucun résultat pour « ${esc(ui.q)} »</div>`;
+    }).join("") : `<div class="empty" style="padding:30px">Aucun résultat pour « ${esc(ui.q)} »${ui.results.length ? " dans cette catégorie" : ""}</div>`);
     return;
   }
   const d = ui.discover || {};
@@ -1901,6 +1940,10 @@ const A = {
   },
   sview: () => { ui.seriesView = ui.seriesView === "grid" ? "list" : "grid"; try { localStorage.setItem("bobine:sview", ui.seriesView); } catch { } renderView(); },
   lmore: el => loadMoreLatest(el.dataset.v),
+  fhide: el => setFilter(el.dataset.v, "hide", !df(el.dataset.v).hide),
+  fclear: el => { ui.dfilt[el.dataset.v] = {}; saveDf(); loadLatest(el.dataset.v); renderResults(); },
+  qtype: el => { ui.qtype = el.dataset.v; renderResults(); },
+  totop: () => { document.body.classList.remove("srow-hide"); window.scrollTo({ top: 0, behavior: "smooth" }); },
   dseg: el => { ui.dseg = el.dataset.v; try { localStorage.setItem("bobine:dseg", ui.dseg); } catch { } loadLatest(ui.dseg); renderResults(); window.scrollTo(0, 0); },
   sugseg: el => { ui.sugSeg = el.dataset.v; loadSug(ui.sugSeg); renderResults(); },
   theme: el => {
@@ -2101,6 +2144,21 @@ document.addEventListener("focusin", e => { if (isTyping(e.target)) document.bod
 document.addEventListener("focusout", () => setTimeout(() => { if (!isTyping(document.activeElement)) document.body.classList.remove("kb"); syncSrow(); }, 180));
 document.addEventListener("input", e => { if (e.target.closest?.(".srow")) syncSrow(); });
 document.addEventListener("touchmove", () => { const a = document.activeElement; if (a && (a.id === "q" || a.id === "gq")) a.blur(); }, { passive: true });
+// Filtres (listes déroulantes des chips)
+document.addEventListener("change", e => { const t = e.target; if (t?.dataset?.f && t.dataset.k) setFilter(t.dataset.k, t.dataset.f, t.value); });
+// Défilement : la barre de recherche se cache en descendant et revient en remontant ; bouton « remonter en haut »
+const toTop = document.createElement("button");
+toTop.className = "totop"; toTop.dataset.a = "totop"; toTop.setAttribute("aria-label", "Remonter en haut"); toTop.innerHTML = I.cu;
+document.body.appendChild(toTop);
+let lastY = 0;
+addEventListener("scroll", () => {
+  const y = window.scrollY, dy = y - lastY; lastY = y;
+  const typing = document.activeElement?.closest?.(".srow");
+  if (y < 90 || typing) document.body.classList.remove("srow-hide");
+  else if (dy > 6) document.body.classList.add("srow-hide");
+  else if (dy < -6) document.body.classList.remove("srow-hide");
+  toTop.classList.toggle("in", ui.mode === "app" && y > innerHeight * 1.2);
+}, { passive: true });
 
 // Geste de l'utilisateur : pendant 2 s, les mises à jour s'affichent tout de suite (il attend une réaction)
 ["click", "input", "change", "keydown"].forEach(t => document.addEventListener(t, () => { tapAt = performance.now(); }, true));
