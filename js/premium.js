@@ -8,7 +8,7 @@ import { LOC } from "./i18n.js";
 export const PRODUCT = "premium_lifetime";          // ID du produit intégré dans la Play Console
 export const PRICE_FALLBACK = "1,99 €";             // affiché si le prix Play n'est pas disponible
 // Lien de paiement Stripe (Dashboard Stripe → Payment Links). Laisser vide tant que Stripe n'est pas configuré.
-export const STRIPE_LINK = "";
+export const STRIPE_LINK = "https://buy.stripe.com/5kQ6oKdaifYc2SldZ9cAo00";
 
 export const isPremium = () => !!store.data.premium;
 
