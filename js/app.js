@@ -85,7 +85,7 @@ const pimg = (path, alt, size = "w342") => path
 // ═════════════ État UI + caches de détails ═════════════
 const ui = { tab: "series", seriesFilter: "watching", sugSeg: "movie", sug: {}, movieSeg: "watchlist", seriesView: (() => { try { return localStorage.getItem("bobine:sview") || "grid"; } catch { return "grid"; } })(), q: "", pushStatus: null, mode: null };
 ui.nospoil = (() => { try { return localStorage.getItem("bobine:nospoil") === "1"; } catch { return false; } })();
-const APP_V = "v51";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
+const APP_V = "v52";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
 const ADMINS = ["gael.bodevin@gmail.com", "bluecellproduction@gmail.com", "fast.and.spermious@gmail.com"];
 const isAdmin = () => ADMINS.includes((store.data.user?.email || "").toLowerCase());
 
@@ -772,17 +772,20 @@ async function latestMovies(f = {}) {
   const cq = f.p ? { with_watch_providers: String(f.p), watch_region: UIREGION, with_watch_monetization_types: "flatrate|free|ads", sort_by: "primary_release_date.desc", "primary_release_date.lte": td, "vote_count.gte": "15", ...(f.g ? { with_genres: String(f.g) } : {}) } : null;
   const [catP, vodP, ...cineP] = await Promise.all([
     cq ? Promise.all([1, 2].map(page => tmdb.get("/discover/movie", { ...cq, page }, { ttl: 6 }).catch(() => ({})))) : Promise.resolve([]),
-    tmdb.get("/discover/movie", vq, { ttl: 6 }),
+    // 3 pages (jusqu'à 60 films) : une seule page plafonnait la liste à 20
+    Promise.all([1, 2, 3].map(page => tmdb.get("/discover/movie", { ...vq, page }, { ttl: 6 }).catch(() => ({})))).then(ps => ({ results: (seen => ps.flatMap(p => p.results || []).filter(x => !seen.has(x.id) && seen.add(x.id)))(new Set()) })),
     // Au cinéma : pas de plateforme possible ; le genre est filtré ici
     ...(f.p ? [] : [1, 2].map(page => tmdb.get("/movie/now_playing", { region: UIREGION, page }, { ttl: 6 }).then(r => ({ results: (r.results || []).filter(x => !f.g || (x.genre_ids || []).includes(+f.g)) }))))
   ]);
-  const det = async arr => (await Promise.all(arr.slice(0, 24).map(x => tmdb.movie(x.id).then(d => ({ ...x, d }), () => null)))).filter(Boolean);
+  // Fiche détaillée (date de sortie VOD exacte) ; si elle échoue (réseau mobile…), on garde le film avec les infos de la liste
+  const det = async (arr, n) => Promise.all(arr.slice(0, n).map(x => tmdb.movie(x.id).then(d => ({ ...x, d }), () => ({ ...x, d: x, nodet: true }))));
   const seenC = new Set();
-  const [vod, cine] = await Promise.all([det(vodP.results || []), det(cineP.flatMap(p => p.results || []).filter(x => !seenC.has(x.id) && seenC.add(x.id)))]);
+  const [vod, cine] = await Promise.all([det(vodP.results || [], 60), det(cineP.flatMap(p => p.results || []).filter(x => !seenC.has(x.id) && seenC.add(x.id)), 24)]);
   const by = k => (a, b) => (b[k] || "") > (a[k] || "") ? 1 : (b[k] || "") < (a[k] || "") ? -1 : (b.popularity || 0) - (a.popularity || 0);
   return {
-    vod: vod.map(x => ({ ...x, date: x.d.release_fr?.digital })).filter(x => x.date && x.date >= from && x.date <= td).sort(by("date")),
-    cine: cine.map(x => ({ ...x, date: x.d.release_fr?.theatrical || x.release_date })).filter(x => x.date && x.date <= td).sort(by("date")),
+    // TMDB garantit déjà une sortie VOD dans la période (requête) : sans fiche détaillée, le film est gardé sans date précise
+    vod: vod.map(x => ({ ...x, date: x.nodet ? null : x.d.release_fr?.digital })).filter(x => x.nodet || (x.date && x.date >= from && x.date <= td)).sort(by("date")),
+    cine: cine.map(x => ({ ...x, date: (x.nodet ? null : x.d.release_fr?.theatrical) || x.release_date })).filter(x => x.date && x.date <= td).sort(by("date")),
     cat: (seen => catP.flatMap(p => p.results || []).filter(x => x.poster_path && !seen.has(x.id) && seen.add(x.id)).map(x => ({ ...x, d: x, date: x.release_date })))(new Set())
   };
 }
@@ -812,7 +815,7 @@ function latestHtml(kind) {
     const inVod = new Set(vod.map(x => x.id));
     const cat = f.p && f.src !== "cine" ? (L.items.cat || []).filter(x => !inVod.has(x.id)).filter(keep).slice(0, 30) : [];
     const pname = (PROVS.movie.find(x => String(x[0]) === String(f.p)) || [])[1] || "";
-    const cell = (x, lbl) => `<button class="gp" data-a="mv" data-id="${x.id}"><div class="p">${pimg(x.d.poster_path || x.poster_path, x.d.title || x.title)}${daysFrom(x.date) >= -6 ? `<span class="newb">NOUVEAU</span>` : ""}${store.data.movies.has(x.id) ? `<span class="badge">${I.check}</span>` : ""}</div><div class="t">${esc(x.d.title || x.title)}</div><div class="s">${lbl} ${esc(fmtShort(x.date))}</div></button>`;
+    const cell = (x, lbl) => `<button class="gp" data-a="mv" data-id="${x.id}"><div class="p">${pimg(x.d.poster_path || x.poster_path, x.d.title || x.title)}${x.date && daysFrom(x.date) >= -6 ? `<span class="newb">NOUVEAU</span>` : ""}${store.data.movies.has(x.id) ? `<span class="badge">${I.check}</span>` : ""}</div><div class="t">${esc(x.d.title || x.title)}</div><div class="s">${lbl}${x.date ? " " + esc(fmtShort(x.date)) : ""}</div></button>`;
     const catHtml = () => cat.length ? sec(`Récents sur ${esc(pname)}`, cat.length) + `<div class="sugsub" style="margin:-6px 0 10px">Les films les plus récents de son catalogue, quelle que soit leur date d'arrivée sur la plateforme.</div><div class="grid">${cat.map(x => `<button class="gp" data-a="mv" data-id="${x.id}"><div class="p">${pimg(x.poster_path, x.title)}${store.data.movies.has(x.id) ? `<span class="badge">${I.check}</span>` : ""}</div><div class="t">${esc(x.title)}</div><div class="s">${esc(year(x.release_date))}</div></button>`).join("")}</div>` : "";
     if (!vod.length && !cine.length && !cat.length) return h + (f.p && f.src === "cine" ? `<div class="empty" style="padding:30px">Les films au cinéma ne sont sur aucune plateforme : choisis « VOD et cinéma » ou retire la plateforme.</div>` : f.g || f.p || f.hide || f.src ? none : `<div class="empty" style="padding:30px">Rien de nouveau pour l'instant.</div>`);
     if (vod.length) h += sec("Nouveau en VOD / streaming", vod.length) + `<div class="grid">${vod.map(x => cell(x, "VOD")).join("")}</div>`;
