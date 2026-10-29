@@ -85,7 +85,7 @@ const pimg = (path, alt, size = "w342") => path
 // ═════════════ État UI + caches de détails ═════════════
 const ui = { tab: "series", seriesFilter: "watching", sugSeg: "movie", sug: {}, movieSeg: "watchlist", seriesView: (() => { try { return localStorage.getItem("bobine:sview") || "grid"; } catch { return "grid"; } })(), q: "", pushStatus: null, mode: null };
 ui.nospoil = (() => { try { return localStorage.getItem("bobine:nospoil") === "1"; } catch { return false; } })();
-const APP_V = "v53";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
+const APP_V = "v54";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
 const ADMINS = ["gael.bodevin@gmail.com", "bluecellproduction@gmail.com", "fast.and.spermious@gmail.com"];
 const isAdmin = () => ADMINS.includes((store.data.user?.email || "").toLowerCase());
 
@@ -352,6 +352,7 @@ function renderView(force) {
   ({ series: vSeries, upcoming: vUpcoming, movies: vMovies, discover: vExplore, profile: vProfile,
      games: vGames, gupcoming: vGUpcoming, gdiscover: vGExplore, settings: vSettings }[ui.tab] || vSeries)(v, force);
   renderTabs(ui.badge);
+  schedBadges();
 }
 
 const domainSwitch = () => ui.domains.av && ui.domains.games
@@ -911,11 +912,12 @@ function discoverRows(d) {
 // ═════════════ Vue : Profil ═════════════
 function vProfile(v, force) {
   if (ui.profPremium !== premium.isPremium()) { ui.profPremium = premium.isPremium(); force = true; }
-  if (!force && $("#pstats")) { $("#pstats").innerHTML = profStats(); const a = $("#advstats"); if (a && premium.isPremium()) a.innerHTML = advStats(); return; }
+  if (!force && $("#pstats")) { $("#pstats").innerHTML = profStats(); const bc = $("#badgec"); if (bc) bc.outerHTML = badgeCard(); const a = $("#advstats"); if (a && premium.isPremium()) a.innerHTML = advStats(); return; }
   const u = store.data.user;
   v.innerHTML = top("Profil", u?.email ? esc(u.email) : "Mode local (sans compte)", `<div style="display:flex;gap:8px"><button class="iconbtn" data-a="tab" data-v="settings" aria-label="Paramètres">${I.gear}</button><button class="iconbtn" data-a="tab" data-v="${ui.lastTab[ui.domain]}" aria-label="Fermer">${I.x}</button></div>`) + `
   ${premiumCard()}
   ${recapCard()}
+  ${badgeCard()}
   <div class="stats" id="pstats">${profStats()}</div>
   ${premium.isPremium() ? `<div class="card" id="advstats">${advStats()}</div>` : lockedCard("Statistiques avancées", "Récap de l'année, temps passé, genres et chaînes préférés, décennies, notes moyennes, top séries, plateformes de jeux.")}
   <button class="card setlink" data-a="tab" data-v="settings">${I.gear}<div><b>Paramètres</b><span>Notifications, thème, contenus, import / sauvegarde, clés TMDB et RAWG, compte</span></div>${I.chev}</button>
@@ -1080,6 +1082,247 @@ function advStats() {
     h += block("Genres de jeux", gg.length ? bars(gg) : "");
   }
   return h;
+}
+
+// ═════════════ Badges ═════════════
+// Gratuits pour tous, calculés sur l'appareil à partir de la bibliothèque. Pas de notification push :
+// un nouveau niveau s'affiche dans l'appli (écran « Nouveau badge ») au moment où il est obtenu.
+// Niveaux obtenus gardés sur l'appareil et dans users/{uid}.badges (synchro entre appareils) ;
+// au tout premier calcul, ce qui est déjà acquis est enregistré sans rien afficher.
+const BL = (fr, en) => UILANG === "en" ? en : fr;
+const TIER_C = ["#d08a4e", "#c7ccd6", "#ffc83d", "#8fd3ff"];
+const tierName = i => BL(["Bronze", "Argent", "Or", "Platine"], ["Bronze", "Silver", "Gold", "Platinum"])[i];
+const PIONEER_END = Date.parse("2027-01-01T00:00:00Z");
+// Oscars du meilleur film et Palmes d'or (identifiants TMDB, source Wikidata, octobre 2026)
+const AWARDED = new Set([13,14,16,28,33,70,98,103,122,143,197,204,223,225,238,240,274,279,284,289,290,380,403,409,423,424,439,453,483,510,581,592,597,606,651,654,655,659,665,680,703,705,713,746,770,783,792,826,874,887,947,1040,1051,1052,1116,1366,1412,1422,1574,1640,1725,1777,1807,1934,2009,2769,2897,3078,3116,4497,5769,5967,6977,8841,8967,9277,9443,10633,10997,11050,11113,11159,11174,11202,11416,11426,11447,11489,11490,11778,11902,11953,12102,12162,12311,12405,14794,15121,15600,15919,16619,16858,17281,17661,17917,17974,18650,20506,21042,23383,24858,25430,27191,27367,28580,28966,30020,31300,31542,31587,33667,33680,34106,36194,37903,38360,38368,40423,41764,42113,42225,42726,42744,42861,43258,43266,43277,43278,45269,47697,52555,52556,56164,56231,59990,60234,62382,65203,68734,74643,76203,80382,86837,117478,131836,152584,154879,194662,265169,314365,314402,374473,376867,399055,401246,490132,496243,497828,505192,545611,581734,630240,776503,872585,915935,1054867,1064213,1401459,1456349]);
+const BIC = {
+  tv: "M3 7h18v12H3zM8 3l4 4 4-4", flag: "M5 21V4M5 4h11l-2 4 2 4H5", mountain: "M3 20l6-10 4 6 3-4 5 8z",
+  sync: "M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7", compass: "M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18zM15.5 8.5l-2 5-5 2 2-5z",
+  film: "M4 4h16v16H4zM8 4v16M16 4v16M4 9h4M4 15h4M16 9h4M16 15h4", star: "M12 3l2.8 5.8 6.2.9-4.5 4.4 1 6.2L12 17.3 6.5 20.3l1-6.2L3 9.7l6.2-.9z",
+  trophy: "M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8 20h8", clock: "M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18zM12 7v5l3 2",
+  ticket: "M4 7h16v3a2 2 0 0 0 0 4v3H4v-3a2 2 0 0 0 0-4zM10 7v10",
+  pad: "M6 9h12a4 4 0 0 1 3.5 6l-1 1.5a2.5 2.5 0 0 1-4 .3L15 15H9l-1.5 1.8a2.5 2.5 0 0 1-4-.3l-1-1.5A4 4 0 0 1 6 9zM8 11v3M6.5 12.5h3",
+  box: "M3 8l9-5 9 5v8l-9 5-9-5zM3 8l9 5 9-5M12 13v8", hourglass: "M7 3h10M7 21h10M8 3v3l4 6-4 6v3M16 3v3l-4 6 4 6v3",
+  layers: "M12 3l9 5-9 5-9-5zM3 13l9 5 9-5", rocket: "M12 3c4 2 6 6 6 10l-3 3H9l-3-3c0-4 2-8 6-10zM12 9a1.5 1.5 0 1 0 0 3 1.5 1.5 0 1 0 0-3zM9 16l-2 5 3-2M15 16l2 5-3-2",
+  buoy: "M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18zM12 8a4 4 0 1 0 0 8 4 4 0 1 0 0-8zM5.6 5.6l3.6 3.6M14.8 14.8l3.6 3.6M18.4 5.6l-3.6 3.6M9.2 14.8l-3.6 3.6",
+  heart: "M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.5-7 10-7 10z", share: "M12 3v12M7 8l5-5 5 5M5 14v6h14v-6"
+};
+const bsvg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${BIC[k]}"/></svg>`;
+// u : [singulier FR, pluriel FR, singulier EN, pluriel EN]
+const BADGES = [
+  { id: "marathon", fam: "tv", ic: "tv", n: ["Marathonien", "Binge-watcher"], r: ["Épisodes vus au total.", "Episodes watched in total."], lv: [100, 500, 1000, 5000], u: ["épisode", "épisodes", "episode", "episodes"] },
+  { id: "finisher", fam: "tv", ic: "flag", n: ["Jusqu’au bout", "All the way"], r: ["Séries terminées : série finie et tous ses épisodes vus.", "Finished shows: the show has ended and you've seen every episode."], lv: [5, 25, 50, 100], u: ["série terminée", "séries terminées", "finished show", "finished shows"] },
+  { id: "endurance", fam: "tv", ic: "mountain", n: ["Endurance", "Endurance"], r: ["Voir tous les épisodes sortis d’une très longue série.", "Watch every aired episode of a very long show."], lv: [100, 300, 1000], u: ["épisode d’une même série", "épisodes d’une même série", "episode of one show", "episodes of one show"] },
+  { id: "uptodate", fam: "tv", ic: "sync", n: ["Toujours à jour", "Always caught up"], r: ["Séries en cours de diffusion à jour en même temps.", "Airing shows you're caught up on at the same time."], lv: [5, 15, 30], u: ["série à jour", "séries à jour", "show caught up", "shows caught up"] },
+  { id: "explorer", fam: "tv", ic: "compass", n: ["Explorateur", "Explorer"], r: ["Genres différents parmi les séries que tu as commencées.", "Different genres among the shows you've started."], lv: [5, 10, 15], u: ["genre", "genres", "genre", "genres"] },
+  { id: "cinephile", fam: "mv", ic: "film", n: ["Cinéphile", "Film buff"], r: ["Films vus au total.", "Movies watched in total."], lv: [10, 50, 100, 500], u: ["film", "films", "movie", "movies"] },
+  { id: "critic", fam: "mv", ic: "star", n: ["Critique", "Critic"], r: ["Films vus et notés.", "Movies watched and rated."], lv: [10, 50, 200], u: ["film noté", "films notés", "rated movie", "rated movies"] },
+  { id: "palmares", fam: "mv", ic: "trophy", n: ["Palmarès", "Award winners"], r: ["Films vus parmi les Oscars du meilleur film et les Palmes d’or.", "Best Picture Oscar and Palme d’Or winners watched."], lv: [5, 15, 30], u: ["film primé", "films primés", "winner", "winners"] },
+  { id: "decades", fam: "mv", ic: "clock", n: ["Voyage dans le temps", "Time traveller"], r: ["Films vus sortis dans des décennies différentes.", "Movies watched from different decades."], lv: [4, 6, 8], u: ["décennie", "décennies", "decade", "decades"] },
+  { id: "triple", fam: "mv", ic: "ticket", n: ["Séance marathon", "Movie marathon"], r: ["Trois films vus le même jour.", "Three movies watched on the same day."], one: true },
+  { id: "gamer", fam: "gm", ic: "pad", n: ["Joueur", "Gamer"], r: ["Jeux terminés.", "Games beaten."], lv: [5, 25, 50], u: ["jeu terminé", "jeux terminés", "game beaten", "games beaten"] },
+  { id: "library", fam: "gm", ic: "box", n: ["Ludothèque", "Game shelf"], r: ["Jeux dans ta bibliothèque, tous statuts confondus.", "Games in your library, any status."], lv: [25, 100, 250], u: ["jeu", "jeux", "game", "games"] },
+  { id: "hours", fam: "gm", ic: "hourglass", n: ["Sans compter", "Lost track of time"], r: ["Heures de jeu cumulées.", "Total hours played."], lv: [100, 500, 2000], u: ["heure", "heures", "hour", "hours"] },
+  { id: "multi", fam: "gm", ic: "layers", n: ["Multiplateforme", "Multi-platform"], r: ["Jeux terminés sur des plateformes différentes.", "Games beaten on different platforms."], lv: [3, 5], u: ["plateforme", "plateformes", "platform", "platforms"] },
+  { id: "pioneer", fam: "sp", ic: "rocket", n: ["Pionnier", "Pioneer"], r: ["Compte créé avant le 1er janvier 2027.", "Account created before January 1, 2027."], one: true },
+  { id: "tvtime", fam: "sp", ic: "buoy", n: ["Rescapé de TV Time", "TV Time refugee"], r: ["Historique TV Time importé dans Playwatch.", "TV Time history imported into Playwatch."], one: true },
+  { id: "supporter", fam: "sp", ic: "heart", n: ["Soutien", "Supporter"], r: ["Playwatch Premium : merci !", "Playwatch Premium: thank you!"], one: true },
+  { id: "recap", fam: "sp", ic: "share", n: ["Rétro", "Year in review"], r: ["Rétro de l’année partagée.", "Year in review shared."], one: true }
+];
+const BFAM = () => [["tv", BL("Séries", "TV shows")], ["mv", BL("Films", "Movies")], ["gm", BL("Jeux vidéo", "Video games")], ["sp", BL("Spéciaux", "Special")]]
+  .filter(([f]) => f === "sp" || (f === "gm" ? ui.domains.games : ui.domains.av));
+const bName = b => BL(...b.n);
+const bUnit = (b, n) => { const u = b.u || []; return UILANG === "en" ? (n === 1 ? u[2] : u[3]) : (n > 1 ? u[1] : u[0]); };
+const bNum = n => n.toLocaleString(LOC);
+const bLevels = b => b.one ? 1 : b.lv.length;
+const bTierC = (b, l) => b.one ? TIER_C[2] : TIER_C[l - 1];
+const bTierN = (b, l) => b.one ? BL("Unique", "One of a kind") : tierName(l - 1);
+const visibleBadges = () => { const f = new Set(BFAM().map(x => x[0])); return BADGES.filter(b => f.has(b.fam)); };
+
+// Valeurs actuelles de chaque badge
+function badgeValues() {
+  const shows = [...store.data.shows.values()], games = [...store.data.games.values()];
+  const mw = [...store.data.movies.values()].filter(m => m.status === "watched");
+  let eps = 0; const genres = new Set();
+  for (const s of shows) {
+    const t = details.get(s.id); eps += seenCount(s, t);
+    if (t && watchedCount(s)) (t.genres || []).forEach(g => genres.add(g?.id ?? g?.name ?? g));
+  }
+  const c = classify();
+  const days = new Map();
+  mw.forEach(m => { if (m.watchedAt) { const k = new Date(m.watchedAt).toDateString(); days.set(k, (days.get(k) || 0) + 1); } });
+  const decades = new Set(mw.map(m => (m.release_date || movieD.get(m.id)?.release_date || "").slice(0, 3)).filter(x => /^\d{3}$/.test(x)));
+  const beaten = games.filter(g => gst(g) === "beaten");
+  const u = store.data.user || {};
+  return {
+    marathon: eps, finisher: c.finished.length, uptodate: c.waiting.length, explorer: genres.size,
+    endurance: Math.max(0, ...[...c.finished, ...c.waiting].map(x => x.p?.watched || 0)),
+    cinephile: mw.length, critic: mw.filter(m => m.rating).length, palmares: mw.filter(m => AWARDED.has(+m.id)).length,
+    decades: decades.size,
+    // une journée « marathon » : 3 à 6 films (au-delà, c'est un import ou un rattrapage en lot)
+    triple: [...days.values()].some(n => n >= 3 && n <= 6) ? 1 : 0,
+    gamer: beaten.length, library: games.length, hours: Math.floor(games.reduce((n, g) => n + (g.hours || 0), 0)),
+    multi: new Set(beaten.map(g => g.platform).filter(Boolean)).size,
+    pioneer: u.created && u.created < PIONEER_END ? 1 : 0,
+    tvtime: ui.bflags?.tvtime ? 1 : 0, supporter: premium.isPremium() ? 1 : 0, recap: ui.bflags?.recap ? 1 : 0
+  };
+}
+const levelOf = (b, v) => b.one ? (v ? 1 : 0) : b.lv.filter(x => v >= x).length;
+
+// État enregistré : { got: { id: { l, at: [date d'obtention de chaque niveau | 0 si déjà acquis au premier calcul] } } }
+const bKey = (k) => `bobine:${k}:${store.data.user?.uid || "x"}`;
+const bRead = k => { try { return JSON.parse(localStorage.getItem(bKey(k)) || "null"); } catch { return null; } };
+const bWrite = (k, v) => { try { localStorage.setItem(bKey(k), JSON.stringify(v)); } catch { } };
+function mergeBadges(a, b) {
+  if (!a) return b || null; if (!b?.got) return a;
+  const got = { ...a.got };
+  for (const [id, g] of Object.entries(b.got)) {
+    const c = got[id]; if (!c) { got[id] = g; continue; }
+    const at = Array.from({ length: Math.max(c.l, g.l) }, (_, i) => { const x = c.at?.[i], y = g.at?.[i]; return x && y ? Math.min(x, y) : (i < c.l ? x : y) || 0; });
+    got[id] = { l: Math.max(c.l, g.l), at };
+  }
+  return { got };
+}
+let bTimer = 0, bSyncT = 0;
+function schedBadges(ms = 2500) { if (!bTimer) bTimer = setTimeout(checkBadges, ms); }
+function saveBadges() {
+  bWrite("badges", ui.bst); clearTimeout(bSyncT);
+  bSyncT = setTimeout(() => store.setUserDoc({ badges: ui.bst, bflags: ui.bflags || {} }).catch(() => { }), 3000);
+}
+function setBadgeFlag(k) {
+  ui.bflags = { ...(ui.bflags || {}), [k]: ui.bflags?.[k] || Date.now() };
+  bWrite("bflags", ui.bflags); store.setUserDoc({ bflags: ui.bflags }).catch(() => { });
+  schedBadges(800);
+}
+function badgesSettled() {
+  if (!store.data.ready || store.data.gamesReady === false || netPending) return false;
+  let ok = true;
+  for (const s of store.data.shows.values()) { needTv(s.id); if (!details.has(s.id) && !tvErr.has(s.id)) ok = false; }
+  return ok;
+}
+function checkBadges() {
+  bTimer = 0;
+  const u = store.data.user; if (ui.mode !== "app" || !u) return;
+  if (ui.bUid !== u.uid) { ui.bUid = u.uid; ui.bst = undefined; ui.bnew = []; }
+  if (ui.bst === undefined) {
+    ui.bst = "wait"; ui.bflags = bRead("bflags") || {};
+    const local = bRead("badges");
+    store.getUserDoc().then(d => {
+      if (ui.bUid !== u.uid) return;
+      for (const [k, v] of Object.entries(d?.bflags || {})) if (v && (!ui.bflags[k] || v < ui.bflags[k])) ui.bflags[k] = v;
+      ui.bst = mergeBadges(local, d?.badges); ui.bFetched = true;
+    }).catch(() => { if (ui.bUid === u.uid) ui.bst = local; }).finally(() => schedBadges(300));
+    return;
+  }
+  if (ui.bst === "wait") return;
+  if (!badgesSettled()) return schedBadges(4000);
+  const vals = badgeValues(), first = !ui.bst, st = ui.bst || { got: {} }, now = Date.now(), fresh = [];
+  ui.bvals = vals;
+  for (const b of BADGES) {
+    const l = levelOf(b, vals[b.id]), g = st.got[b.id] || { l: 0, at: [] };
+    if (l <= g.l) continue;
+    const at = [...(g.at || [])]; for (let i = g.l; i < l; i++) at[i] = first ? 0 : now;
+    st.got[b.id] = { l, at };
+    if (!first) fresh.push({ id: b.id, l });
+  }
+  if (first || fresh.length) { ui.bst = st; saveBadges(); }
+  if (fresh.length) ui.bnew = [...(ui.bnew || []).filter(x => !fresh.some(f => f.id === x.id)), ...fresh];
+  const pc = $("#badgec"); if (pc) pc.outerHTML = badgeCard();
+  if (sheets.at(-1)?.badges) sheets.at(-1).refresh();
+  showUnlock();
+}
+function showUnlock() {
+  const list = (ui.bnew || []).filter(x => visibleBadges().some(b => b.id === x.id));
+  if (!list.length) { ui.bnew = []; return; }
+  if (sheets.length || document.visibilityState !== "visible" || ui.mode !== "app") return schedBadges(5000);
+  ui.bnew = [];
+  const B = id => BADGES.find(b => b.id === id);
+  list.sort((a, b) => (B(b.id).one ? 2.5 : b.l) - (B(a.id).one ? 2.5 : a.l));
+  const top = list[0], b = B(top.id), more = list.length - 1;
+  openSheet(() => {
+    const c = bTierC(b, top.l), next = !b.one && b.lv[top.l];
+    const txt = b.one ? BL(...b.r) : `${bNum(b.lv[top.l - 1])} ${bUnit(b, b.lv[top.l - 1])}.` + (next ? " " + BL(`Prochain niveau : ${tierName(top.l)}, à ${bNum(next)}.`, `Next level: ${tierName(top.l)}, at ${bNum(next)}.`) : "");
+    return `<div class="body bunl"><div class="bk">${BL("Nouveau badge", "New badge")}</div>
+      <div class="bhalo" style="--bc:${c}"><span class="bdg xl" style="--bc:${c}">${bsvg(b.ic)}</span></div>
+      <h2>${esc(bName(b))}</h2><span class="btier" style="--bc:${c}">${b.one ? bTierN(b, 1) : BL("Niveau ", "Level: ") + bTierN(b, top.l)}</span>
+      <p>${esc(txt)}</p>${more ? `<p class="bmore">${BL(`+ ${more} autre${more > 1 ? "s" : ""} nouveau${more > 1 ? "x" : ""} badge${more > 1 ? "s" : ""}`, `+ ${more} more new badge${more > 1 ? "s" : ""}`)}</p>` : ""}
+      <div class="bbtns"><button class="btn pri" data-a="badgeShare" data-v="${b.id}">${I.share}${BL("Partager", "Share")}</button><button class="btn" data-a="badgesFromUnlock">${BL("Voir mes badges", "See my badges")}</button></div></div>`;
+  });
+}
+
+// Prochain niveau le plus proche (en proportion)
+function nextGoal(vals) {
+  let best = null;
+  for (const b of visibleBadges()) {
+    if (b.one) continue;
+    const l = levelOf(b, vals[b.id]), t = b.lv[l]; if (!t) continue;
+    const r = vals[b.id] / t; if (!best || r > best.r) best = { b, l, t, r, left: t - vals[b.id] };
+  }
+  return best;
+}
+const bGot = id => ui.bst && ui.bst !== "wait" ? ui.bst.got?.[id]?.l || 0 : 0;
+// Niveau affiché : le meilleur entre ce qui est enregistré et la valeur actuelle
+const bLvl = (b, vals) => Math.max(bGot(b.id), vals ? levelOf(b, vals[b.id] || 0) : 0);
+function badgeCard() {
+  const vals = ui.bvals, vb = visibleBadges();
+  if (!vals) { schedBadges(300); return `<button class="card setlink" id="badgec" data-a="badges">${bsvg("trophy")}<div><b>${BL("Badges", "Badges")}</b><span>${BL("Calcul en cours…", "Calculating…")}</span></div>${I.chev}</button>`; }
+  const n = vb.filter(b => bLvl(b, vals) > 0).length, ng = nextGoal(vals);
+  const last = vb.filter(b => bLvl(b, vals) > 0).sort((a, b) => Math.max(0, ...(ui.bst?.got?.[b.id]?.at || [0])) - Math.max(0, ...(ui.bst?.got?.[a.id]?.at || [0]))).slice(0, 3);
+  return `<button class="card setlink" id="badgec" data-a="badges">${bsvg("trophy")}<div><b>${BL("Badges", "Badges")} · ${n}/${vb.length}</b><span>${ng ? BL(`Prochain : ${esc(bName(ng.b))} ${tierName(ng.l)}, plus que ${bNum(ng.left)}`, `Next: ${esc(bName(ng.b))} ${tierName(ng.l)}, ${bNum(ng.left)} to go`) : BL("Tous les niveaux sont obtenus !", "Every level earned!")}</span></div>
+    <span class="bmini">${last.map(b => { const l = bLvl(b, vals); return `<span class="bdg sm" style="--bc:${bTierC(b, l)}">${bsvg(b.ic)}</span>`; }).join("")}</span>${I.chev}</button>`;
+}
+const bDate = ts => ts ? new Date(ts).toLocaleDateString(LOC, { day: "numeric", month: "short", year: new Date(ts).getFullYear() === new Date().getFullYear() ? undefined : "numeric" }) : "";
+function openBadges() {
+  const sh = openSheet(() => {
+    const vals = ui.bvals || badgeValues(), vb = visibleBadges();
+    const tot = vb.reduce((n, b) => n + bLevels(b), 0), got = vb.reduce((n, b) => n + bLvl(b, vals), 0);
+    const nb = vb.filter(b => bLvl(b, vals) > 0).length, ng = nextGoal(vals);
+    const recent = vb.map(b => ({ b, l: bLvl(b, vals), at: Math.max(0, ...(ui.bst?.got?.[b.id]?.at || [0])) })).filter(x => x.l && x.at).sort((a, b) => b.at - a.at).slice(0, 3);
+    const tile = b => {
+      const l = bLvl(b, vals), v = vals[b.id] || 0, t = b.one ? 1 : b.lv[l] || b.lv.at(-1), prev = b.one || !l ? 0 : b.lv[l - 1];
+      const pct = l >= bLevels(b) ? 100 : Math.max(0, Math.min(100, Math.round((v - prev) / (t - prev) * 100)));
+      return `<button class="btile" data-a="badge" data-v="${b.id}"><span class="bdg ${l ? "" : "off"}" style="--bc:${l ? bTierC(b, l) : ""}">${bsvg(b.ic)}</span><span class="bn">${esc(bName(b))}</span><span class="bpb"><i style="width:${pct}%${l ? `;background:${bTierC(b, l)}` : ""}"></i></span></button>`;
+    };
+    return `<div class="body bsheet"><h1>${BL("Badges", "Badges")}</h1>
+      <div class="card bsum"><div class="bsr"><b>${nb} <small>/ ${vb.length} badges</small></b><span>${BL(`${got} niveaux sur ${tot}`, `${got} of ${tot} levels`)}</span></div>
+        <div class="bpb big"><i style="width:${Math.round(got / tot * 100)}%"></i></div>
+        ${ng ? `<p>${BL("Prochain", "Next")} : <b>${esc(bName(ng.b))} ${tierName(ng.l)}</b>, ${BL(`plus que ${bNum(ng.left)} ${bUnit(ng.b, ng.left)}`, `${bNum(ng.left)} ${bUnit(ng.b, ng.left)} to go`)}</p>` : ""}</div>
+      ${recent.length ? `<h2 class="bh">${BL("Récemment obtenus", "Recently earned")}</h2><div class="brec">${recent.map(x => `<button class="card" data-a="badge" data-v="${x.b.id}"><span class="bdg" style="--bc:${bTierC(x.b, x.l)}">${bsvg(x.b.ic)}</span><b>${esc(bName(x.b))}</b><small style="color:${bTierC(x.b, x.l)}">${bTierN(x.b, x.l)}</small></button>`).join("")}</div>` : ""}
+      ${BFAM().map(([f, name]) => { const list = vb.filter(b => b.fam === f); return `<div class="bfh"><h2 class="bh">${name}</h2><span>${list.filter(b => bLvl(b, vals)).length} / ${list.length}</span></div><div class="bgrid">${list.map(tile).join("")}</div>`; }).join("")}
+      <p class="bnote">${BL("Les badges sont calculés à partir de ta bibliothèque : épisodes cochés, films vus et notés, jeux terminés.", "Badges are worked out from your library: episodes ticked, movies watched and rated, games beaten.")}</p></div>`;
+  });
+  sh.badges = true;
+}
+function openBadge(id) {
+  const b = BADGES.find(x => x.id === id); if (!b) return;
+  const sh = openSheet(() => {
+    const vals = ui.bvals || badgeValues(), v = vals[b.id] || 0, l = bLvl(b, vals), at = ui.bst?.got?.[b.id]?.at || [];
+    const c = l ? bTierC(b, l) : "";
+    let prog = "";
+    if (!b.one && l < b.lv.length) {
+      const t = b.lv[l], prev = l ? b.lv[l - 1] : 0, pct = Math.max(0, Math.min(100, Math.round((v - prev) / (t - prev) * 100)));
+      prog = `<div class="card bprog"><div class="bsr"><span>${BL("Vers", "Towards")} <b style="color:${TIER_C[l]}">${tierName(l)}</b></span><b>${bNum(v)} / ${bNum(t)}</b></div><div class="bpb big"><i style="width:${pct}%;background:${TIER_C[l]}"></i></div><small>${BL(`Encore ${bNum(t - v)} ${bUnit(b, t - v)}`, `${bNum(t - v)} more ${bUnit(b, t - v)}`)}</small></div>`;
+    }
+    const rows = b.one ? "" : `<div class="blv">${b.lv.map((t, i) => {
+      const ok = i < l, cur = i === l;
+      const state = ok ? BL("Obtenu", "Earned") + (at[i] ? " · " + bDate(at[i]) : "") : cur ? Math.min(99, Math.floor(v / t * 100)) + " %" : BL("Verrouillé", "Locked");
+      return `<div class="blr"><span class="bdot" style="--bc:${ok || cur ? TIER_C[i] : ""}"></span><div><b>${tierName(i)}</b><small>${bNum(t)} ${bUnit(b, t)}</small></div><em class="${cur ? "cur" : ""}" style="${cur ? `color:${TIER_C[i]}` : ""}">${state}</em></div>`;
+    }).join("")}</div>`;
+    return `<div class="body bdet"><span class="bdg xl ${l ? "" : "off"}" style="--bc:${c}">${bsvg(b.ic)}</span><h2>${esc(bName(b))}</h2><p>${esc(BL(...b.r))}</p>
+      ${l ? `<span class="btier" style="--bc:${c}">${b.one ? bTierN(b, 1) + (at[0] ? " · " + bDate(at[0]) : "") : BL("Niveau ", "Level: ") + bTierN(b, l)}</span>` : `<span class="btier off">${BL("Pas encore obtenu", "Not earned yet")}</span>`}
+      ${prog}${rows}
+      <div class="bbtns row"><button class="btn" data-a="closeSheet">${BL("Fermer", "Close")}</button>${l ? `<button class="btn pri" data-a="badgeShare" data-v="${b.id}">${I.share}${BL("Partager", "Share")}</button>` : ""}</div></div>`;
+  });
+  sh.badges = true;
+}
+async function shareBadge(id) {
+  const b = BADGES.find(x => x.id === id); if (!b) return;
+  const l = bLvl(b, ui.bvals);
+  const text = b.one ? BL(`J'ai obtenu le badge « ${bName(b)} » sur Playwatch !`, `I earned the “${bName(b)}” badge on Playwatch!`)
+    : BL(`J'ai obtenu le badge « ${bName(b)} » niveau ${bTierN(b, l)} sur Playwatch !`, `I earned the ${bTierN(b, l)} “${bName(b)}” badge on Playwatch!`);
+  const url = "https://playwatch.app/" + (UILANG === "en" ? "en" : "");
+  if (navigator.share) { try { await navigator.share({ text, url }); return; } catch (e) { if (e.name === "AbortError") return; } }
+  try { await navigator.clipboard.writeText(text + " " + url); toast(BL("Texte copié", "Text copied")); } catch { toast(text); }
 }
 
 // ═════════════ Journal des plantages (administrateur) ═════════════
@@ -1260,9 +1503,10 @@ async function shareRecap() {
   try { blob = await new Promise((res, rej) => { try { c.toBlob(b => b ? res(b) : rej(new Error("vide")), "image/png"); } catch (e) { rej(e); } }); }
   catch { c = await drawRecap(r, false); blob = await new Promise(res => c.toBlob(res, "image/png")); }   // affiche non autorisée par le CDN : image sans affiches
   const file = new File([blob], `playwatch-retro-${r.Y}.png`, { type: "image/png" });
-  if (navigator.canShare?.({ files: [file] })) { try { await navigator.share({ files: [file], title: `Ma rétro ${r.Y} — Playwatch` }); return; } catch (e) { if (e.name === "AbortError") return; } }
+  if (navigator.canShare?.({ files: [file] })) { try { await navigator.share({ files: [file], title: `Ma rétro ${r.Y} — Playwatch` }); setBadgeFlag("recap"); return; } catch (e) { if (e.name === "AbortError") return; } }
   const a = document.createElement("a"); a.href = URL.createObjectURL(file); a.download = file.name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
   toast("Image enregistrée");
+  setBadgeFlag("recap");
 }
 
 // ═════════════ Jeux vidéo ═════════════
@@ -1991,6 +2235,10 @@ const A = {
   recap: el => openRecap(el.dataset.v ? +el.dataset.v : recapYear()),
   recapShare: () => shareRecap(),
   closeSheet: () => history.back(),
+  badges: () => openBadges(),
+  badge: el => openBadge(el.dataset.v),
+  badgeShare: el => shareBadge(el.dataset.v),
+  badgesFromUnlock: () => { history.back(); setTimeout(openBadges, 350); },
   sfilter: el => { ui.seriesFilter = el.dataset.v; renderView(); },
   mseg: el => { ui.movieSeg = el.dataset.v; renderView(); },
   retryTv: el => { const id = +el.dataset.id; tvErr.delete(id); requested.delete("tv" + id); sheets.at(-1)?.refresh(); },
@@ -2352,6 +2600,7 @@ async function runImport(files) {
       $("#impst").textContent = "Enregistrement…";
       await store.bulk({ shows: res.shows, movies: res.movies }, (d, n) => { $("#impst").textContent = `Enregistrement ${d}/${n}`; });
       const eps = res.shows.reduce((n, s) => n + watchedCount(s), 0);
+      setBadgeFlag("tvtime");
       z.innerHTML = `<div class="log">✅ Import terminé : ${plural(res.shows.length, "série")} (${plural(eps, "épisode")} vus), ${plural(res.movies.length, "film")}.${res.unresolved.length ? `\n\n⚠️ Non trouvés sur TMDB (${res.unresolved.length}) — ajoute-les à la main depuis Explorer :\n` + res.unresolved.join("\n") : ""}</div>`;
     } catch (e) { z.insertAdjacentHTML("beforeend", `<div class="err">Erreur : ${esc(e.message)}</div>`); }
   };

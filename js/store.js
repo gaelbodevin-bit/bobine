@@ -152,7 +152,7 @@ export async function init() {
     fb.au.onAuthStateChanged(fb.auth, u => {
       state.shows.clear(); state.movies.clear(); state.games.clear(); state.gamesReady = false;
       if (u) {
-        state.user = { uid: u.uid, email: u.email };
+        state.user = { uid: u.uid, email: u.email, created: Date.parse(u.metadata?.creationTime) || 0 };
         try { state.premium = localStorage.getItem("bobine:premium:" + u.uid) === "1"; } catch { state.premium = false; }
         state.ready = false;
         subscribeUser(u.uid);
