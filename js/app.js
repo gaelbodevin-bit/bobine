@@ -85,7 +85,7 @@ const pimg = (path, alt, size = "w342") => path
 // ═════════════ État UI + caches de détails ═════════════
 const ui = { tab: "series", seriesFilter: "watching", sugSeg: "movie", sug: {}, movieSeg: "watchlist", seriesView: (() => { try { return localStorage.getItem("bobine:sview") || "grid"; } catch { return "grid"; } })(), q: "", pushStatus: null, mode: null };
 ui.nospoil = (() => { try { return localStorage.getItem("bobine:nospoil") === "1"; } catch { return false; } })();
-const APP_V = "v48";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
+const APP_V = "v49";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
 const ADMINS = ["gael.bodevin@gmail.com", "bluecellproduction@gmail.com", "fast.and.spermious@gmail.com"];
 const isAdmin = () => ADMINS.includes((store.data.user?.email || "").toLowerCase());
 
@@ -757,11 +757,15 @@ async function loadMoreLatest(kind) {
 }
 // Films : nouveautés VOD / streaming en France (30 j) et films à l'affiche
 async function latestMovies(f = {}) {
-  const td = isoToday(), from = ago(30);
+  // Avec une plateforme choisie, la fenêtre passe à 90 jours (sinon il reste souvent 1 ou 2 films)
+  const td = isoToday(), from = ago(f.p ? 90 : 30);
   const vq = { region: UIREGION, with_release_type: "4", "release_date.gte": from, "release_date.lte": td, sort_by: "popularity.desc" };
   if (f.g) vq.with_genres = String(f.g);
   if (f.p) Object.assign(vq, { with_watch_providers: String(f.p), watch_region: UIREGION });
-  const [vodP, ...cineP] = await Promise.all([
+  // « Récents sur <plateforme> » : les films les plus récents de son catalogue (TMDB ne donne pas la date d'arrivée sur la plateforme)
+  const cq = f.p ? { with_watch_providers: String(f.p), watch_region: UIREGION, with_watch_monetization_types: "flatrate|free|ads", sort_by: "primary_release_date.desc", "primary_release_date.lte": td, "vote_count.gte": "15", ...(f.g ? { with_genres: String(f.g) } : {}) } : null;
+  const [catP, vodP, ...cineP] = await Promise.all([
+    cq ? Promise.all([1, 2].map(page => tmdb.get("/discover/movie", { ...cq, page }, { ttl: 6 }).catch(() => ({})))) : Promise.resolve([]),
     tmdb.get("/discover/movie", vq, { ttl: 6 }),
     // Au cinéma : pas de plateforme possible ; le genre est filtré ici
     ...(f.p ? [] : [1, 2].map(page => tmdb.get("/movie/now_playing", { region: UIREGION, page }, { ttl: 6 }).then(r => ({ results: (r.results || []).filter(x => !f.g || (x.genre_ids || []).includes(+f.g)) }))))
@@ -772,7 +776,8 @@ async function latestMovies(f = {}) {
   const by = k => (a, b) => (b[k] || "") > (a[k] || "") ? 1 : (b[k] || "") < (a[k] || "") ? -1 : (b.popularity || 0) - (a.popularity || 0);
   return {
     vod: vod.map(x => ({ ...x, date: x.d.release_fr?.digital })).filter(x => x.date && x.date >= from && x.date <= td).sort(by("date")),
-    cine: cine.map(x => ({ ...x, date: x.d.release_fr?.theatrical || x.release_date })).filter(x => x.date && x.date <= td).sort(by("date"))
+    cine: cine.map(x => ({ ...x, date: x.d.release_fr?.theatrical || x.release_date })).filter(x => x.date && x.date <= td).sort(by("date")),
+    cat: catP.flatMap(p => p.results || []).filter(x => x.poster_path).map(x => ({ ...x, d: x, date: x.release_date }))
   };
 }
 const dayLabel = date => { const d = daysFrom(date); if (d === 0) return "Aujourd'hui"; if (d === -1) return "Hier"; const f = fmtLong(date); return f.charAt(0).toUpperCase() + f.slice(1); };
@@ -790,18 +795,22 @@ function filterBar(kind) {
 }
 function latestHtml(kind) {
   const L = ui.latest[fkey(kind)], f = df(kind);
-  const intro = { anime: "Les derniers épisodes d'animés japonais, du plus récent au plus ancien.", tv: "Les derniers épisodes de séries, du plus récent au plus ancien.", movie: "Les films arrivés ce mois-ci en VOD / streaming en France, et ceux à l'affiche au cinéma." }[kind];
+  const intro = { anime: "Les derniers épisodes d'animés japonais, du plus récent au plus ancien.", tv: "Les derniers épisodes de séries, du plus récent au plus ancien.", movie: f.p ? "Les films arrivés ces 3 derniers mois sur cette plateforme, puis les plus récents de son catalogue." : "Les films arrivés ce mois-ci en VOD / streaming en France, et ceux à l'affiche au cinéma." }[kind];
   let h = filterBar(kind) + `<div class="sugsub" style="margin:-4px 0 10px">${intro}</div>`;
   if (!L || L === "loading") return h + `<div class="grid">${Array.from({ length: 6 }, () => `<div class="gp"><div class="p sk"></div></div>`).join("")}</div>`;
   const keep = x => !f.hide || !(kind === "movie" ? store.data.movies.has(x.id) : store.data.shows.has(x.id));
   const none = `<div class="empty" style="padding:30px">Rien ne correspond à ces filtres.<br><button class="linkbtn" data-a="fclear" data-v="${kind}" style="display:inline;width:auto">Effacer les filtres</button></div>`;
   if (kind === "movie") {
     const vod = f.src === "cine" ? [] : L.items.vod.filter(keep), cine = f.src === "vod" ? [] : L.items.cine.filter(keep);
+    const inVod = new Set(vod.map(x => x.id));
+    const cat = f.p && f.src !== "cine" ? (L.items.cat || []).filter(x => !inVod.has(x.id)).filter(keep).slice(0, 30) : [];
+    const pname = (PROVS.movie.find(x => String(x[0]) === String(f.p)) || [])[1] || "";
     const cell = (x, lbl) => `<button class="gp" data-a="mv" data-id="${x.id}"><div class="p">${pimg(x.d.poster_path || x.poster_path, x.d.title || x.title)}${daysFrom(x.date) >= -6 ? `<span class="newb">NOUVEAU</span>` : ""}${store.data.movies.has(x.id) ? `<span class="badge">${I.check}</span>` : ""}</div><div class="t">${esc(x.d.title || x.title)}</div><div class="s">${lbl} ${esc(fmtShort(x.date))}</div></button>`;
-    if (!vod.length && !cine.length) return h + (f.p && f.src === "cine" ? `<div class="empty" style="padding:30px">Les films au cinéma ne sont sur aucune plateforme : choisis « VOD et cinéma » ou retire la plateforme.</div>` : f.g || f.p || f.hide || f.src ? none : `<div class="empty" style="padding:30px">Rien de nouveau pour l'instant.</div>`);
+    const catHtml = () => cat.length ? sec(`Récents sur ${esc(pname)}`, cat.length) + `<div class="sugsub" style="margin:-6px 0 10px">Les films les plus récents de son catalogue, quelle que soit leur date d'arrivée sur la plateforme.</div><div class="grid">${cat.map(x => `<button class="gp" data-a="mv" data-id="${x.id}"><div class="p">${pimg(x.poster_path, x.title)}${store.data.movies.has(x.id) ? `<span class="badge">${I.check}</span>` : ""}</div><div class="t">${esc(x.title)}</div><div class="s">${esc(year(x.release_date))}</div></button>`).join("")}</div>` : "";
+    if (!vod.length && !cine.length && !cat.length) return h + (f.p && f.src === "cine" ? `<div class="empty" style="padding:30px">Les films au cinéma ne sont sur aucune plateforme : choisis « VOD et cinéma » ou retire la plateforme.</div>` : f.g || f.p || f.hide || f.src ? none : `<div class="empty" style="padding:30px">Rien de nouveau pour l'instant.</div>`);
     if (vod.length) h += sec("Nouveau en VOD / streaming", vod.length) + `<div class="grid">${vod.map(x => cell(x, "VOD")).join("")}</div>`;
     if (cine.length) h += sec("À l'affiche au cinéma", cine.length) + `<div class="grid">${cine.map(x => cell(x, "Ciné")).join("")}</div>`;
-    return h;
+    return h + catHtml();
   }
   const items = L.items.filter(keep);
   if (!items.length && L.win >= WINS) return h + (f.g || f.p || f.hide ? none : `<div class="empty" style="padding:30px">Aucun épisode sorti récemment.</div>`);

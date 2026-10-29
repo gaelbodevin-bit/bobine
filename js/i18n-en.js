@@ -52,6 +52,8 @@ export const EN = {
   "Les derniers épisodes d'animés japonais, du plus récent au plus ancien.": "The latest Japanese anime episodes, newest first.",
   "Les derniers épisodes de séries, du plus récent au plus ancien.": "The latest show episodes, newest first.",
   "Les films arrivés ce mois-ci en VOD / streaming en France, et ceux à l'affiche au cinéma.": "Movies that hit streaming this month in your country, and those in theaters now.",
+  "Les films arrivés ces 3 derniers mois sur cette plateforme, puis les plus récents de son catalogue.": "Movies that arrived on this service in the last 3 months, then the newest titles in its catalog.",
+  "Les films les plus récents de son catalogue, quelle que soit leur date d'arrivée sur la plateforme.": "The newest movies in its catalog, whenever they arrived on the service.",
   "Nouveau en VOD / streaming": "New on streaming", "À l'affiche au cinéma": "In theaters now", "Rien de nouveau pour l'instant.": "Nothing new right now.",
   "Aucun épisode sorti récemment.": "No recent episodes.", "Rien ne correspond à ces filtres.": "Nothing matches these filters.", "Effacer les filtres": "Clear filters",
   "Rien sur cette période avec ces filtres : touche « Voir plus » pour remonter plus loin.": "Nothing in this period with these filters: tap “See more” to go further back.",
@@ -207,6 +209,7 @@ export const EN = {
 // Motifs : [expression régulière sur le texte complet, remplacement (texte ou fonction (groupes, tr))]
 const W = { "série": "show", "séries": "shows", "film": "movie", "films": "movies", "épisode": "episode", "épisodes": "episodes", "saison": "season", "saisons": "seasons", "jeu": "game", "jeux": "games", "ép.": "ep.", "an": "year", "ans": "years", "j": "d" };
 export const PATTERNS = [
+  [/^Récents sur (.+)$/, "Latest on $1"],
   [/^(.+?) ▾$/, (g, tr) => `${tr(g[1])} ▾`],
   [/^Il y a (\d+) jours?$/, "$1 days ago"],
   [/^il y a (\d+) j$/, "$1 d ago"],
