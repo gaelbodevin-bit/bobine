@@ -85,7 +85,7 @@ const pimg = (path, alt, size = "w342") => path
 // ═════════════ État UI + caches de détails ═════════════
 const ui = { tab: "series", seriesFilter: "watching", sugSeg: "movie", sug: {}, movieSeg: "watchlist", seriesView: (() => { try { return localStorage.getItem("bobine:sview") || "grid"; } catch { return "grid"; } })(), q: "", pushStatus: null, mode: null };
 ui.nospoil = (() => { try { return localStorage.getItem("bobine:nospoil") === "1"; } catch { return false; } })();
-const APP_V = "v49";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
+const APP_V = "v50";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
 const ADMINS = ["gael.bodevin@gmail.com", "bluecellproduction@gmail.com", "fast.and.spermious@gmail.com"];
 const isAdmin = () => ADMINS.includes((store.data.user?.email || "").toLowerCase());
 
@@ -777,7 +777,7 @@ async function latestMovies(f = {}) {
   return {
     vod: vod.map(x => ({ ...x, date: x.d.release_fr?.digital })).filter(x => x.date && x.date >= from && x.date <= td).sort(by("date")),
     cine: cine.map(x => ({ ...x, date: x.d.release_fr?.theatrical || x.release_date })).filter(x => x.date && x.date <= td).sort(by("date")),
-    cat: catP.flatMap(p => p.results || []).filter(x => x.poster_path).map(x => ({ ...x, d: x, date: x.release_date }))
+    cat: (seen => catP.flatMap(p => p.results || []).filter(x => x.poster_path && !seen.has(x.id) && seen.add(x.id)).map(x => ({ ...x, d: x, date: x.release_date })))(new Set())
   };
 }
 const dayLabel = date => { const d = daysFrom(date); if (d === 0) return "Aujourd'hui"; if (d === -1) return "Hier"; const f = fmtLong(date); return f.charAt(0).toUpperCase() + f.slice(1); };
