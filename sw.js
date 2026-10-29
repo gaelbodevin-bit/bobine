@@ -1,5 +1,5 @@
 // Playwatch — service worker : cache hors-ligne + notifications push
-const VERSION = "bobine-v51";
+const VERSION = "bobine-v52";
 const SHELL = [
   "./", "./index.html", "./manifest.webmanifest", "./css/app.css",
   "./js/app.js", "./js/config.js", "./js/tmdb.js", "./js/store.js", "./js/push.js", "./js/import-tvtime.js", "./js/rawg.js", "./js/premium.js", "./js/i18n.js", "./js/i18n-en.js",
