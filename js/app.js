@@ -85,7 +85,7 @@ const pimg = (path, alt, size = "w342") => path
 // ═════════════ État UI + caches de détails ═════════════
 const ui = { tab: "series", seriesFilter: "watching", sugSeg: "movie", sug: {}, movieSeg: "watchlist", seriesView: (() => { try { return localStorage.getItem("bobine:sview") || "grid"; } catch { return "grid"; } })(), q: "", pushStatus: null, mode: null };
 ui.nospoil = (() => { try { return localStorage.getItem("bobine:nospoil") === "1"; } catch { return false; } })();
-const APP_V = "v54";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
+const APP_V = "v55";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
 const ADMINS = ["gael.bodevin@gmail.com", "bluecellproduction@gmail.com", "fast.and.spermious@gmail.com"];
 const isAdmin = () => ADMINS.includes((store.data.user?.email || "").toLowerCase());
 
@@ -1268,7 +1268,7 @@ function badgeCard() {
   if (!vals) { schedBadges(300); return `<button class="card setlink" id="badgec" data-a="badges">${bsvg("trophy")}<div><b>${BL("Badges", "Badges")}</b><span>${BL("Calcul en cours…", "Calculating…")}</span></div>${I.chev}</button>`; }
   const n = vb.filter(b => bLvl(b, vals) > 0).length, ng = nextGoal(vals);
   const last = vb.filter(b => bLvl(b, vals) > 0).sort((a, b) => Math.max(0, ...(ui.bst?.got?.[b.id]?.at || [0])) - Math.max(0, ...(ui.bst?.got?.[a.id]?.at || [0]))).slice(0, 3);
-  return `<button class="card setlink" id="badgec" data-a="badges">${bsvg("trophy")}<div><b>${BL("Badges", "Badges")} · ${n}/${vb.length}</b><span>${ng ? BL(`Prochain : ${esc(bName(ng.b))} ${tierName(ng.l)}, plus que ${bNum(ng.left)}`, `Next: ${esc(bName(ng.b))} ${tierName(ng.l)}, ${bNum(ng.left)} to go`) : BL("Tous les niveaux sont obtenus !", "Every level earned!")}</span></div>
+  return `<button class="card setlink" id="badgec" data-a="badges">${bsvg("trophy")}<div><b>${BL("Badges", "Badges")} · ${n}/${vb.length}</b><span>${ng ? BL(`Prochain : ${esc(bName(ng.b))} ${tierName(ng.l)}, plus que ${bNum(ng.left)} ${bUnit(ng.b, ng.left)}`, `Next: ${esc(bName(ng.b))} ${tierName(ng.l)}, ${bNum(ng.left)} ${bUnit(ng.b, ng.left)} to go`) : BL("Tous les niveaux sont obtenus !", "Every level earned!")}</span></div>
     <span class="bmini">${last.map(b => { const l = bLvl(b, vals); return `<span class="bdg sm" style="--bc:${bTierC(b, l)}">${bsvg(b.ic)}</span>`; }).join("")}</span>${I.chev}</button>`;
 }
 const bDate = ts => ts ? new Date(ts).toLocaleDateString(LOC, { day: "numeric", month: "short", year: new Date(ts).getFullYear() === new Date().getFullYear() ? undefined : "numeric" }) : "";
