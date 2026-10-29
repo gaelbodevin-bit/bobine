@@ -101,12 +101,17 @@ async function runUser(uid, subs) {
     if (show.deleted || show.status === "stopped") return;
     try {
       const t = await tmdb(`/tv/${show.id}`, { language });
-      const la = t.last_episode_to_air;
-      if (!la?.air_date || la.air_date < SINCE) {
-        return;
-      }
-      const sea = await tmdb(`/tv/${show.id}/season/${la.season_number}`, { language });
-      const fresh = (sea.episodes || []).filter(e => e.air_date && e.air_date >= SINCE && e.air_date <= TODAY && !watched(show, e.season_number, e.episode_number));
+      // Saisons à vérifier : celle du dernier épisode sorti, et celle du « prochain épisode » si sa date est déjà passée
+      // (TMDB met parfois à jour last_episode_to_air avec retard : l'épisode est dans la saison mais pas encore « dernier »).
+      const la = t.last_episode_to_air, nx = t.next_episode_to_air;
+      const toCheck = new Set();
+      if (la?.air_date && la.air_date >= SINCE) toCheck.add(la.season_number);
+      if (nx?.air_date && nx.air_date >= SINCE && nx.air_date <= TODAY) toCheck.add(nx.season_number);
+      if (!toCheck.size) return;
+      const seasons = await Promise.all([...toCheck].map(n => tmdb(`/tv/${show.id}/season/${n}`, { language }).catch(() => ({ episodes: [] }))));
+      const fresh = seasons.flatMap(sea => sea.episodes || [])
+        .filter(e => e.air_date && e.air_date >= SINCE && e.air_date <= TODAY && !watched(show, e.season_number, e.episode_number))
+        .sort((a, b) => a.season_number - b.season_number || a.episode_number - b.episode_number);
       if (fresh.length) badge++;
       const already = new Set(show.notified || []);
       const todo = fresh.filter(e => !already.has(SE(e.season_number, e.episode_number)));
