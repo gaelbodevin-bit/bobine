@@ -85,7 +85,7 @@ const pimg = (path, alt, size = "w342") => path
 // ═════════════ État UI + caches de détails ═════════════
 const ui = { tab: "series", seriesFilter: "watching", sugSeg: "movie", sug: {}, movieSeg: "watchlist", seriesView: (() => { try { return localStorage.getItem("bobine:sview") || "grid"; } catch { return "grid"; } })(), q: "", pushStatus: null, mode: null };
 ui.nospoil = (() => { try { return localStorage.getItem("bobine:nospoil") === "1"; } catch { return false; } })();
-const APP_V = "v50";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
+const APP_V = "v51";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
 const ADMINS = ["gael.bodevin@gmail.com", "bluecellproduction@gmail.com", "fast.and.spermious@gmail.com"];
 const isAdmin = () => ADMINS.includes((store.data.user?.email || "").toLowerCase());
 
@@ -461,14 +461,16 @@ function vUpcoming(v) {
     const seen = new Set();
     const addEp = (e, arr) => { const k = e.season_number + ":" + e.episode_number; if (seen.has(k)) return; seen.add(k); arr.push({ date: e.air_date, s, t, e }); };
     const nx = t.next_episode_to_air, la = t.last_episode_to_air;
+    // À venir (à partir d'aujourd'hui) et sortis ces 7 derniers jours ; un « prochain épisode » dont la date est passée
+    // (fiche TMDB pas encore à jour) est rangé dans les sorties récentes au lieu de disparaître.
+    const place = e => { if (!e?.air_date) return; if (e.air_date >= now) { if (e.air_date <= max) addEp(e, items); } else if (e.air_date >= recentMin) addEp(e, recent); };
     if (nx?.air_date) {
       const sea = needSeason(s.id, nx.season_number);
-      const eps = sea ? sea.episodes.filter(e => e.air_date && e.air_date >= now && e.air_date <= max) : [nx];
-      eps.forEach(e => addEp(e, items));
+      (sea ? sea.episodes : [nx]).forEach(place);
     }
     if (la?.air_date && la.air_date >= recentMin) {
       const sea = needSeason(s.id, la.season_number);
-      (sea ? sea.episodes.filter(e => e.air_date && e.air_date >= recentMin && e.air_date < now) : [la]).forEach(e => addEp(e, recent));
+      (sea ? sea.episodes.filter(e => e.air_date && e.air_date >= recentMin && e.air_date <= now) : [la]).forEach(place);
     }
   }
   for (const m of store.data.movies.values()) {
@@ -712,10 +714,14 @@ const FRANCO = ["FR", "BE", "CH", "LU", "MC"].includes(UIREGION);
 const PROV_LOCAL = [...PROV_MAIN.filter(p => FRANCO || p[0] !== 381), ...(UIREGION === "US" ? [[15, "Hulu"], [386, "Peacock"]] : [])];
 const PROVS = { anime: [[283, "Crunchyroll"], ...(FRANCO ? [[415, "ADN"]] : []), [8, "Netflix"], [119, "Prime Video"], [337, "Disney+"]], tv: PROV_LOCAL, movie: PROV_LOCAL };
 const MSRC = [["vod", "VOD / streaming"], ["cine", "Au cinéma"]];
+// Période des sorties VOD / streaming (par défaut : 30 jours, 3 mois avec une plateforme)
+const MPER = [["30", "30 derniers jours"], ["90", "3 derniers mois"], ["180", "6 derniers mois"], ["365", "12 derniers mois"], ["all", "Toutes dates"]];
+const perOf = f => f.per || (f.p ? "90" : "30");
+const PER_TXT = { "30": "ce mois-ci", "90": "ces 3 derniers mois", "180": "ces 6 derniers mois", "365": "ces 12 derniers mois", "all": "" };
 ui.dfilt = (() => { try { const o = JSON.parse(localStorage.getItem("bobine:dfilt") || "{}"); return o && typeof o === "object" ? o : {}; } catch { return {}; } })();
 const df = kind => ui.dfilt[kind] || (ui.dfilt[kind] = {});
 const saveDf = () => { try { localStorage.setItem("bobine:dfilt", JSON.stringify(ui.dfilt)); } catch { } };
-const fkey = kind => { const f = df(kind); return `${kind}|${f.g || ""}|${f.p || ""}`; };   // genre et plateforme filtrent côté TMDB
+const fkey = kind => { const f = df(kind); return `${kind}|${f.g || ""}|${f.p || ""}|${f.per || ""}`; };   // genre et plateforme filtrent côté TMDB
 function setFilter(kind, k, v) {
   const f = df(kind);
   if (v === "" || v == null || v === false) delete f[k]; else f[k] = v;
@@ -757,9 +763,9 @@ async function loadMoreLatest(kind) {
 }
 // Films : nouveautés VOD / streaming en France (30 j) et films à l'affiche
 async function latestMovies(f = {}) {
-  // Avec une plateforme choisie, la fenêtre passe à 90 jours (sinon il reste souvent 1 ou 2 films)
-  const td = isoToday(), from = ago(f.p ? 90 : 30);
-  const vq = { region: UIREGION, with_release_type: "4", "release_date.gte": from, "release_date.lte": td, sort_by: "popularity.desc" };
+  // Avec une plateforme choisie, la fenêtre par défaut passe à 90 jours (sinon il reste souvent 1 ou 2 films)
+  const per = perOf(f), td = isoToday(), from = per === "all" ? "1900-01-01" : ago(+per);
+  const vq = { region: UIREGION, with_release_type: "4", ...(per === "all" ? {} : { "release_date.gte": from }), "release_date.lte": td, sort_by: "popularity.desc" };
   if (f.g) vq.with_genres = String(f.g);
   if (f.p) Object.assign(vq, { with_watch_providers: String(f.p), watch_region: UIREGION });
   // « Récents sur <plateforme> » : les films les plus récents de son catalogue (TMDB ne donne pas la date d'arrivée sur la plateforme)
@@ -790,12 +796,13 @@ function epCard(x) {
 function filterBar(kind) {
   const f = df(kind), name = (list, v) => list.find(x => String(x[0]) === String(v))?.[1];
   const sel = (k, label, list, all) => `<label class="fchip ${f[k] ? "on" : ""}"><span>${esc(name(list, f[k]) || label)}</span>${I.cd}<select data-f="${k}" data-k="${kind}" aria-label="${label}"><option value="">${all}</option>${list.map(([v, l]) => `<option value="${v}" ${String(f[k]) === String(v) ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>`;
-  const any = f.g || f.p || f.hide || f.src;
-  return `<div class="fbar">${kind === "movie" ? sel("src", "Sortie", MSRC, "VOD et cinéma") : ""}${sel("p", "Plateforme", PROVS[kind], "Toutes les plateformes")}${sel("g", "Genre", GENRES[kind], "Tous les genres")}<button class="fchip ${f.hide ? "on" : ""}" data-a="fhide" data-v="${kind}">${f.hide ? I.check : ""}Pas dans ma liste</button>${any ? `<button class="fchip clr" data-a="fclear" data-v="${kind}">${I.x}Effacer</button>` : ""}</div>`;
+  const any = f.g || f.p || f.hide || f.src || f.per;
+  const perSel = kind === "movie" && f.src !== "cine" ? `<label class="fchip ${f.per ? "on" : ""}"><span>${esc(name(MPER, perOf(f)))}</span>${I.cd}<select data-f="per" data-k="${kind}" aria-label="Période">${MPER.map(([v, l]) => `<option value="${v}" ${perOf(f) === v ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>` : "";
+  return `<div class="fbar">${kind === "movie" ? sel("src", "Sortie", MSRC, "VOD et cinéma") + perSel : ""}${sel("p", "Plateforme", PROVS[kind], "Toutes les plateformes")}${sel("g", "Genre", GENRES[kind], "Tous les genres")}<button class="fchip ${f.hide ? "on" : ""}" data-a="fhide" data-v="${kind}">${f.hide ? I.check : ""}Pas dans ma liste</button>${any ? `<button class="fchip clr" data-a="fclear" data-v="${kind}">${I.x}Effacer</button>` : ""}</div>`;
 }
 function latestHtml(kind) {
   const L = ui.latest[fkey(kind)], f = df(kind);
-  const intro = { anime: "Les derniers épisodes d'animés japonais, du plus récent au plus ancien.", tv: "Les derniers épisodes de séries, du plus récent au plus ancien.", movie: f.p ? "Les films arrivés ces 3 derniers mois sur cette plateforme, puis les plus récents de son catalogue." : "Les films arrivés ce mois-ci en VOD / streaming en France, et ceux à l'affiche au cinéma." }[kind];
+  const intro = { anime: "Les derniers épisodes d'animés japonais, du plus récent au plus ancien.", tv: "Les derniers épisodes de séries, du plus récent au plus ancien.", movie: (pt => f.p ? (pt ? `Les films arrivés ${pt} sur cette plateforme, puis les plus récents de son catalogue.` : "Les films les plus populaires de cette plateforme, puis les plus récents de son catalogue.") : (pt ? `Les films arrivés ${pt} en VOD / streaming en France, et ceux à l'affiche au cinéma.` : "Les films les plus populaires en VOD / streaming, et ceux à l'affiche au cinéma."))(PER_TXT[perOf(f)]) }[kind];
   let h = filterBar(kind) + `<div class="sugsub" style="margin:-4px 0 10px">${intro}</div>`;
   if (!L || L === "loading") return h + `<div class="grid">${Array.from({ length: 6 }, () => `<div class="gp"><div class="p sk"></div></div>`).join("")}</div>`;
   const keep = x => !f.hide || !(kind === "movie" ? store.data.movies.has(x.id) : store.data.shows.has(x.id));

@@ -163,9 +163,26 @@ function frReleases(rd) {
 }
 
 // ── API publique ────────────────────────────────────────────
-export async function tv(id, opts = {}) {
-  const v = await get(`/tv/${id}`, { append_to_response: "external_ids" }, { ttl: 12, slim: slimTv, ...opts });
+// Si le « prochain épisode » en cache est déjà sorti, on recharge la fiche (une fois par session),
+// puis on le considère comme diffusé si TMDB n'a pas encore mis à jour last_episode_to_air.
+const refreshed = new Set();
+const dueNext = v => { const n = v?.next_episode_to_air; return !!(n && n.air_date && n.air_date <= today()); };
+function promoteNext(v) {
+  if (!dueNext(v)) return v;
+  const n = v.next_episode_to_air, l = v.last_episode_to_air;
+  if (!l || n.season_number > l.season_number || (n.season_number === l.season_number && n.episode_number > l.episode_number)) v.last_episode_to_air = n;
+  v.next_episode_to_air = null;
+  if (!v.last_air_date || v.last_air_date < n.air_date) v.last_air_date = n.air_date;
+  airedCache.delete(v);
   return v;
+}
+export async function tv(id, opts = {}) {
+  let v = await get(`/tv/${id}`, { append_to_response: "external_ids" }, { ttl: 12, slim: slimTv, ...opts });
+  if (dueNext(v) && !opts.fresh && !refreshed.has(id)) {
+    refreshed.add(id);
+    try { v = await get(`/tv/${id}`, { append_to_response: "external_ids" }, { ttl: 12, slim: slimTv, ...opts, fresh: true }); } catch { }
+  }
+  return promoteNext(v);
 }
 // Casting léger (dernière saison) chargé à part : aggregate_credits est énorme sur les longues séries (One Piece…)
 export async function tvCast(id) {
