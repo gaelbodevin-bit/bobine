@@ -1,6 +1,6 @@
 # 🎬 Bobine — l'alternative à TV Time
 
-PWA de suivi de séries et de films, installable sur iPhone, avec notifications push des nouveaux épisodes.
+Playwatch : suivi de séries, de films et de jeux vidéo (appli Android et version web), avec notifications push des nouveaux épisodes.
 
 - **À voir** : prochain épisode de chaque série (visuel de l'épisode, titre, « NOUVEAU » si sorti < 7 jours), coche en un tap avec Annuler
 - **À venir** : calendrier des prochains épisodes + sorties ciné/VOD des films de ta liste, et ce qui est sorti cette semaine
