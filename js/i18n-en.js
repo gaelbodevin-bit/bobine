@@ -117,7 +117,7 @@ export const EN = {
   "Paiement interrompu": "Payment interrupted", "Thèmes & apparence": "Themes & appearance", "Import d'historique": "History import", "Notifications": "Notifications",
   "7 thèmes, couleurs libres (fond, cartes, texte, accent), coins, barre d'onglets et presets enregistrés.": "7 themes, free colors (background, cards, text, accent), corners, tab bar and saved presets.",
   "Nouvel épisode, sortie ciné/VOD d'un film de ta liste, sortie d'un jeu attendu.": "New episode, theater/streaming release of a movie on your list, release of an awaited game.",
-  "Calendrier abonnable": "Subscribable calendar", "Les sorties de tes séries, films et jeux dans le calendrier de ton iPhone ou Google Agenda.": "Releases of your shows, movies and games in your iPhone calendar or Google Calendar.",
+  "Calendrier abonnable": "Subscribable calendar", "Les sorties de tes séries, films et jeux dans Google Agenda ou l'agenda de ton téléphone.": "Releases of your shows, movies and games in Google Calendar or your phone's calendar.",
   "Paiement reçu ! Premium s'active dans quelques secondes.": "Payment received! Premium activates in a few seconds.",
 
   // ── Paramètres ──
@@ -143,19 +143,19 @@ export const EN = {
   "Notifications activées 🔔": "Notifications on 🔔", "Les notifications fonctionnent. Tu seras prévenu à chaque nouvel épisode.": "Notifications work. You'll be alerted for every new episode.",
   "Tu reçois une notif à chaque nouvel épisode et à la sortie des films de ta liste « À voir ».": "You get a notification for every new episode and when movies on your Watchlist come out.",
   "Active-les pour être prévenu des nouveaux épisodes.": "Turn them on to be alerted about new episodes.", "Active les notifications pour être prévenu dès leur sortie.": "Turn on notifications to be alerted as soon as they're out.",
-  "Autorise Playwatch dans Réglages iOS → Notifications → Playwatch.": "Allow Playwatch in iOS Settings → Notifications → Playwatch.", "Permission refusée": "Permission denied",
+  "Autorise les notifications de Playwatch dans les réglages de ton téléphone ou de ton navigateur.": "Allow Playwatch notifications in your phone or browser settings.", "Permission refusée": "Permission denied",
   "Ce navigateur ne gère pas le Web Push.": "This browser doesn't support Web Push.", "Installe l'app d'abord": "Install the app first",
-  "Sur iPhone, les notifications ne marchent que depuis l'écran d'accueil : Partager → « Sur l'écran d'accueil », puis rouvre Playwatch depuis l'icône.": "On iPhone, notifications only work from the home screen: Share → “Add to Home Screen”, then reopen Playwatch from the icon.",
+  "Sur ce téléphone, les notifications ne marchent que depuis l'écran d'accueil : Partager → « Sur l'écran d'accueil », puis rouvre Playwatch depuis l'icône.": "On this phone, notifications only work from the home screen: Share → “Add to Home Screen”, then reopen Playwatch from its icon.",
   "Configure Firebase pour les notifications": "Set up Firebase for notifications", "Configure Firebase (voir README) pour la synchro et les notifications.": "Set up Firebase (see README) for sync and notifications.",
   "Indisponibles en mode local": "Unavailable in local mode", "Installe Playwatch": "Install Playwatch", "Partager → « Sur l'écran d'accueil » pour l'app plein écran et les notifications.": "Share → “Add to Home Screen” for the full-screen app and notifications.",
 
   // ── Calendrier ──
   "Calendrier": "Calendar", "Créer mon calendrier": "Create my calendar", "Calendrier créé": "Calendar created", "Calendrier vide": "Empty calendar", "Lien copié": "Link copied", "Copie ce lien :": "Copy this link:",
-  "Ajouter au calendrier iPhone / Mac": "Add to iPhone / Mac calendar", "Ajouter à Google Agenda": "Add to Google Calendar", "Copier le lien (Outlook, autres)": "Copy link (Outlook, others)",
+  "Ouvrir dans une autre appli d'agenda": "Open in another calendar app", "Ajouter à Google Agenda": "Add to Google Calendar", "Copier le lien (Outlook, autres)": "Copy link (Outlook, others)",
   "Créer un nouveau lien (l'ancien cessera de fonctionner)": "Create a new link (the old one will stop working)", "Nouveau lien créé : ré-ajoute le calendrier": "New link created: add the calendar again",
-  "Abonne ton calendrier (iPhone, Mac, Google Agenda, Outlook…) aux sorties de tes séries, des films de ta liste et des jeux attendus. Il se met à jour tout seul.": "Subscribe your calendar (iPhone, Mac, Google Calendar, Outlook…) to releases of your shows, the movies on your list and awaited games. It updates itself.",
+  "Abonne ton agenda (Google Agenda, Outlook…) aux sorties de tes séries, des films de ta liste et des jeux attendus. Il se met à jour tout seul.": "Subscribe your calendar (Google Calendar, Outlook…) to releases of your shows, movies on your list and games you're waiting for. It updates itself.",
   "Ajoute-le une seule fois : les nouvelles dates arrivent toutes seules (épisodes 30 jours en arrière et 4 mois en avant).": "Add it once: new dates show up on their own (episodes 30 days back and 4 months ahead).",
-  "Les sorties de tes séries, films et jeux directement dans le calendrier de ton iPhone ou dans Google Agenda, mis à jour tout seul.": "Releases of your shows, movies and games right in your iPhone calendar or Google Calendar, updated automatically.",
+  "Les sorties de tes séries, films et jeux directement dans Google Agenda ou l'agenda de ton téléphone, mis à jour tout seul.": "Releases of your shows, movies and games right in Google Calendar or your phone's calendar, updated automatically.",
 
   // ── Apparence ──
   "Apparence": "Appearance", "Personnaliser l'apparence": "Customize appearance", "Aperçu": "Preview", "Thèmes": "Themes", "Mes presets": "My presets", "Couleurs": "Colors",

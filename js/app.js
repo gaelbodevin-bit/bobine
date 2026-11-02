@@ -85,7 +85,7 @@ const pimg = (path, alt, size = "w342") => path
 // ═════════════ État UI + caches de détails ═════════════
 const ui = { tab: "series", seriesFilter: "watching", sugSeg: "movie", sug: {}, movieSeg: "watchlist", seriesView: (() => { try { return localStorage.getItem("bobine:sview") || "grid"; } catch { return "grid"; } })(), q: "", pushStatus: null, mode: null };
 ui.nospoil = (() => { try { return localStorage.getItem("bobine:nospoil") === "1"; } catch { return false; } })();
-const APP_V = "v55";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
+const APP_V = "v56";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
 const ADMINS = ["gael.bodevin@gmail.com", "bluecellproduction@gmail.com", "fast.and.spermious@gmail.com"];
 const isAdmin = () => ADMINS.includes((store.data.user?.email || "").toLowerCase());
 
@@ -994,8 +994,8 @@ function pushCard() {
   const [label, txt] = {
     on: ["Activées", "Tu reçois une notif à chaque nouvel épisode et à la sortie des films de ta liste « À voir »."],
     off: ["Désactivées", "Active-les pour être prévenu des nouveaux épisodes."],
-    denied: ["Bloquées", "Autorise Playwatch dans Réglages iOS → Notifications → Playwatch."],
-    install: ["Installe l'app d'abord", "Sur iPhone, les notifications ne marchent que depuis l'écran d'accueil : Partager → « Sur l'écran d'accueil », puis rouvre Playwatch depuis l'icône."],
+    denied: ["Bloquées", "Autorise les notifications de Playwatch dans les réglages de ton téléphone ou de ton navigateur."],
+    install: ["Installe l'app d'abord", "Sur ce téléphone, les notifications ne marchent que depuis l'écran d'accueil : Partager → « Sur l'écran d'accueil », puis rouvre Playwatch depuis l'icône."],
     local: ["Indisponibles en mode local", "Configure Firebase (voir README) pour la synchro et les notifications."],
     noconfig: ["Non configurées", "Ajoute la clé VAPID publique dans js/config.js (voir README)."],
     unsupported: ["Non supportées", "Ce navigateur ne gère pas le Web Push."]
@@ -1023,7 +1023,7 @@ const PERKS = [
   ["stats", I.spark, "Statistiques avancées", "Récap de l'année, temps passé, genres, chaînes, décennies, notes, top séries."],
   ["theme", I.star, "Thèmes & apparence", "7 thèmes, couleurs libres (fond, cartes, texte, accent), coins, barre d'onglets et presets enregistrés."],
   ["import", I.up, "Import d'historique", "Reprends tout depuis TV Time, Binge Boxd ou une sauvegarde."],
-  ["calendar", I.cal, "Calendrier abonnable", "Les sorties de tes séries, films et jeux dans le calendrier de ton iPhone ou Google Agenda."],
+  ["calendar", I.cal, "Calendrier abonnable", "Les sorties de tes séries, films et jeux dans Google Agenda ou l'agenda de ton téléphone."],
   ["recap", I.spark, "Ta rétro de l'année", "Ton année en séries, films et jeux, en image à partager."]
 ];
 function openPaywall(why) {
@@ -1363,14 +1363,14 @@ function calUrl(tk) {
 function calCard() {
   const u = store.data.user;
   if (!u || u.local) return "";
-  if (!premium.isPremium()) return `<div class="card locked" data-a="paywall" data-v="calendar"><h3>${I.cal}Calendrier${lockTag()}</h3><p>Les sorties de tes séries, films et jeux directement dans le calendrier de ton iPhone ou dans Google Agenda, mis à jour tout seul.</p><button class="btn pri" style="width:100%">${I.lock}Débloquer avec Premium</button></div>`;
+  if (!premium.isPremium()) return `<div class="card locked" data-a="paywall" data-v="calendar"><h3>${I.cal}Calendrier${lockTag()}</h3><p>Les sorties de tes séries, films et jeux directement dans Google Agenda ou l'agenda de ton téléphone, mis à jour tout seul.</p><button class="btn pri" style="width:100%">${I.lock}Débloquer avec Premium</button></div>`;
   if (ui.userDoc === undefined) return `<div class="card" id="calcard"><h3>${I.cal}Calendrier</h3><div class="sk" style="height:46px;border-radius:12px"></div></div>`;
   const tk = ui.userDoc?.calToken;
-  if (!tk) return `<div class="card" id="calcard"><h3>${I.cal}Calendrier</h3><p>Abonne ton calendrier (iPhone, Mac, Google Agenda, Outlook…) aux sorties de tes séries, des films de ta liste et des jeux attendus. Il se met à jour tout seul.</p><button class="btn pri" data-a="calOn" style="width:100%">${I.cal}Créer mon calendrier</button></div>`;
+  if (!tk) return `<div class="card" id="calcard"><h3>${I.cal}Calendrier</h3><p>Abonne ton agenda (Google Agenda, Outlook…) aux sorties de tes séries, des films de ta liste et des jeux attendus. Il se met à jour tout seul.</p><button class="btn pri" data-a="calOn" style="width:100%">${I.cal}Créer mon calendrier</button></div>`;
   const l = calUrl(tk);
   return `<div class="card" id="calcard"><h3>${I.cal}Calendrier</h3><p>Ajoute-le une seule fois : les nouvelles dates arrivent toutes seules (épisodes 30 jours en arrière et 4 mois en avant).</p>
-    <a class="btn pri" href="${l.webcal}" style="width:100%">${I.cal}Ajouter au calendrier iPhone / Mac</a>
-    <a class="btn" href="${l.google}" target="_blank" rel="noopener" style="width:100%;margin-top:8px">Ajouter à Google Agenda</a>
+    <a class="btn pri" href="${l.google}" target="_blank" rel="noopener" style="width:100%">${I.cal}Ajouter à Google Agenda</a>
+    <a class="btn" href="${l.webcal}" style="width:100%;margin-top:8px">Ouvrir dans une autre appli d'agenda</a>
     <button class="btn ghost" data-a="calCopy" style="width:100%;margin-top:8px">Copier le lien (Outlook, autres)</button>
     <button class="linkbtn" data-a="calReset">Créer un nouveau lien (l'ancien cessera de fonctionner)</button></div>`;
 }
