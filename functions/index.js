@@ -91,14 +91,20 @@ export const stripeWebhook = onRequest({ region: REGION, secrets: [STRIPE_SECRET
 });
 
 // ── Parrainage ──
-// refstats/{uid}   : { code, count, referees: [uid…], rewarded }   (serveur uniquement)
-// refcodes/{CODE}  : { uid }                                       (serveur uniquement)
-// referrals/{uid}  : { by, code, at }  — le filleul ne peut être parrainé qu'une fois
-// Garde-fous : compte filleul créé depuis moins de 14 jours, pas soi-même, un seul parrain par compte,
-// et un compte ne peut pas parrainer celui qui l'a parrainé. Premium offert au parrain à REF_GOAL filleuls.
-const REF_GOAL = 3, REF_WINDOW = 14 * 864e5;
+// refstats/{uid}   : { code, count (validés), pending, referees: [uid…], rewarded }   (serveur uniquement)
+// refcodes/{CODE}  : { uid }                                                          (serveur uniquement)
+// referrals/{uid}  : { by, code, at, status: pending|valid|duplicate, ip, day, days[] } — un seul parrain par compte
+// Garde-fous : compte filleul de moins de 14 jours, pas soi-même, pas de parrainage croisé.
+// Un filleul ne compte qu'une fois « actif » : compte vérifié (Google ou e-mail confirmé), au moins
+// REF_MIN_TITLES titres dans sa bibliothèque et l'appli ouverte sur REF_MIN_DAYS jours différents.
+// Deux filleuls d'un même parrain inscrits le même jour depuis la même connexion internet ne comptent qu'une fois.
+// Premium offert au parrain à REF_GOAL filleuls validés.
+const REF_GOAL = 3, REF_WINDOW = 14 * 864e5, REF_MIN_TITLES = 5, REF_MIN_DAYS = 2;
 const ALPHA = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";   // sans 0/O/1/I pour éviter les confusions
 const newCode = () => Array.from({ length: 6 }, () => ALPHA[Math.floor(Math.random() * ALPHA.length)]).join("");
+const parisDay = (t = Date.now()) => new Date(t).toLocaleDateString("sv-SE", { timeZone: "Europe/Paris" });
+const clientIp = req => String(req.rawRequest?.headers?.["x-forwarded-for"] || req.rawRequest?.ip || "").split(",")[0].trim();
+const ipHash = ip => ip ? createHash("sha256").update("pw-ref:" + ip).digest("hex").slice(0, 16) : "";   // on ne garde pas l'adresse en clair
 
 async function ensureCode(uid) {
   const ref = db.doc(`refstats/${uid}`);
@@ -110,22 +116,77 @@ async function ensureCode(uid) {
       const c = db.doc(`refcodes/${code}`);
       if ((await tx.get(c)).exists) return false;
       tx.set(c, { uid, at: FieldValue.serverTimestamp() });
-      tx.set(ref, { code, count: 0, referees: [], rewarded: false }, { merge: true });
+      tx.set(ref, { code, count: 0, pending: 0, referees: [], rewarded: false }, { merge: true });
       return true;
     });
-    if (ok) return { code, count: 0, referees: [], rewarded: false };
+    if (ok) return { code, count: 0, pending: 0, referees: [], rewarded: false };
   }
   throw new HttpsError("internal", "Impossible de créer un code, réessaie.");
 }
 
-async function refState(uid) {
+const isVerified = u => !!u.emailVerified || (u.providerData || []).some(p => p.providerId === "google.com");
+async function libraryCount(uid) {
+  let n = 0;
+  for (const col of ["shows", "movies", "games"]) {
+    const c = db.collection(`users/${uid}/${col}`);
+    const [all, del] = await Promise.all([c.count().get(), c.where("deleted", "==", true).count().get()]);
+    n += all.data().count - del.data().count;
+  }
+  return n;
+}
+// Conditions remplies par le filleul (pour l'afficher dans son appli)
+async function conditions(uid, user, r) {
+  const titles = await libraryCount(uid);
+  return { verified: isVerified(user), titles, titlesNeeded: REF_MIN_TITLES, days: (r.days || []).length, daysNeeded: REF_MIN_DAYS };
+}
+const conditionsMet = c => c.verified && c.titles >= REF_MIN_TITLES && c.days >= REF_MIN_DAYS;
+
+// Valide (ou écarte) un parrainage en attente quand le filleul remplit les conditions
+async function settle(uid, user) {
+  const mineRef = db.doc(`referrals/${uid}`);
+  const m = await mineRef.get();
+  if (!m.exists) return null;
+  const r = m.data();
+  if (r.status && r.status !== "pending") return { status: r.status };
+  const today = parisDay();
+  if (!(r.days || []).includes(today)) { await mineRef.set({ days: FieldValue.arrayUnion(today) }, { merge: true }); r.days = [...(r.days || []), today]; }
+  const c = await conditions(uid, user, r);
+  if (!conditionsMet(c)) return { status: "pending", conditions: c };
+  // Même parrain, même connexion, même jour qu'un filleul déjà validé → doublon
+  let dup = false;
+  if (r.ip) {
+    const twins = await db.collection("referrals").where("by", "==", r.by).where("ip", "==", r.ip).get();
+    dup = twins.docs.some(d => d.id !== uid && d.data().status === "valid" && d.data().day === r.day);
+  }
+  const by = r.by;
+  const reward = await db.runTransaction(async tx => {
+    const stats = db.doc(`refstats/${by}`);
+    const [cur, st] = await Promise.all([tx.get(mineRef), tx.get(stats)]);
+    if (cur.data()?.status && cur.data().status !== "pending") return false;
+    const s = st.exists ? st.data() : {};
+    const pending = Math.max(0, (s.pending || 0) - 1);
+    if (dup) { tx.set(mineRef, { status: "duplicate", settledAt: FieldValue.serverTimestamp() }, { merge: true }); tx.set(stats, { pending }, { merge: true }); return false; }
+    const count = (s.count || 0) + 1, now = count >= REF_GOAL && !s.rewarded;
+    tx.set(mineRef, { status: "valid", settledAt: FieldValue.serverTimestamp() }, { merge: true });
+    tx.set(stats, { count, pending, referees: FieldValue.arrayUnion(uid), lastAt: FieldValue.serverTimestamp(), ...(now ? { rewarded: true, rewardedAt: FieldValue.serverTimestamp() } : {}) }, { merge: true });
+    return now;
+  });
+  if (reward) {
+    const e = await db.doc(`entitlements/${by}`).get();
+    if (!e.exists || !e.data().premium) await grant(by, { source: "referral" });
+    logger.info("parrainage : Premium offert", by);
+  }
+  return { status: dup ? "duplicate" : "valid" };
+}
+
+async function refState(uid, user, mine) {
   const st = await ensureCode(uid);
-  const [mine, user] = await Promise.all([db.doc(`referrals/${uid}`).get(), getAuth().getUser(uid)]);
+  user = user || await getAuth().getUser(uid);
   const created = Date.parse(user.metadata.creationTime) || 0;
   return {
-    code: st.code, count: st.count || 0, goal: REF_GOAL, rewarded: !!st.rewarded,
-    referredBy: mine.exists ? mine.data().code : null,
-    canClaim: !mine.exists && Date.now() - created < REF_WINDOW,
+    code: st.code, count: st.count || 0, pending: st.pending || 0, goal: REF_GOAL, rewarded: !!st.rewarded,
+    referredBy: mine?.code || null, myStatus: mine?.status || null, myConditions: mine?.conditions || null,
+    canClaim: !mine && Date.now() - created < REF_WINDOW,
     claimUntil: created + REF_WINDOW
   };
 }
@@ -134,35 +195,35 @@ export const referral = onCall({ region: REGION }, async req => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError("unauthenticated", "Connexion requise.");
   const action = String(req.data?.action || "me");
-  if (action === "me") return refState(uid);
+  const user = await getAuth().getUser(uid);
+
+  if (action === "me") {
+    // À chaque ouverture : on note le jour d'utilisation du filleul et on valide son parrainage s'il remplit les conditions
+    const m = await db.doc(`referrals/${uid}`).get();
+    let mine = null;
+    if (m.exists) { const s = await settle(uid, user); mine = { code: m.data().code, ...(s || {}) }; }
+    return refState(uid, user, mine);
+  }
   if (action !== "claim") throw new HttpsError("invalid-argument", "Action inconnue.");
 
   const code = String(req.data?.code || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12);
   if (code.length < 4) throw new HttpsError("invalid-argument", "Code invalide.");
-  const user = await getAuth().getUser(uid);
   if (Date.now() - (Date.parse(user.metadata.creationTime) || 0) > REF_WINDOW)
     throw new HttpsError("failed-precondition", "Le code de parrainage s'utilise dans les 14 jours après l'inscription.");
   const owner = await db.doc(`refcodes/${code}`).get();
   if (!owner.exists) throw new HttpsError("not-found", "Ce code n'existe pas.");
   const by = owner.data().uid;
   if (by === uid) throw new HttpsError("invalid-argument", "Tu ne peux pas utiliser ton propre code.");
+  const ip = ipHash(clientIp(req)), day = parisDay();
 
-  const reward = await db.runTransaction(async tx => {
+  await db.runTransaction(async tx => {
     const mine = db.doc(`referrals/${uid}`), theirs = db.doc(`referrals/${by}`), stats = db.doc(`refstats/${by}`);
-    const [m, t, st] = await Promise.all([tx.get(mine), tx.get(theirs), tx.get(stats)]);
+    const [m, t] = await Promise.all([tx.get(mine), tx.get(theirs)]);
     if (m.exists) throw new HttpsError("already-exists", "Tu as déjà utilisé un code de parrainage.");
     if (t.exists && t.data().by === uid) throw new HttpsError("invalid-argument", "Vous ne pouvez pas vous parrainer mutuellement.");
-    const s = st.exists ? st.data() : { count: 0, referees: [], rewarded: false };
-    const count = (s.count || 0) + 1;
-    tx.set(mine, { by, code, at: FieldValue.serverTimestamp() });
-    const now = count >= REF_GOAL && !s.rewarded;
-    tx.set(stats, { count, referees: FieldValue.arrayUnion(uid), lastAt: FieldValue.serverTimestamp(), ...(now ? { rewarded: true, rewardedAt: FieldValue.serverTimestamp() } : {}) }, { merge: true });
-    return now;
+    tx.set(mine, { by, code, at: FieldValue.serverTimestamp(), status: "pending", ip, day, days: [day] });
+    tx.set(stats, { pending: FieldValue.increment(1), lastAt: FieldValue.serverTimestamp() }, { merge: true });
   });
-  if (reward) {
-    const e = await db.doc(`entitlements/${by}`).get();
-    if (!e.exists || !e.data().premium) await grant(by, { source: "referral" });
-    logger.info("parrainage : Premium offert", by);
-  }
-  return { ok: true, ...(await refState(uid)) };
+  const s = await settle(uid, user);
+  return { ok: true, ...(await refState(uid, user, { code, ...(s || {}) })) };
 });

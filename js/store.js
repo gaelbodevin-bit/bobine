@@ -176,6 +176,9 @@ export async function signUp(email, pass) {
   await loadFirebase();
   return fb.au.createUserWithEmailAndPassword(fb.auth, email, pass);
 }
+// E-mail de confirmation (comptes e-mail + mot de passe) — utilisé par le parrainage
+export async function sendVerifyEmail() { await loadFirebase(); const u = fb.auth.currentUser; if (u && !u.emailVerified) return fb.au.sendEmailVerification(u); }
+export const isEmailUser = () => !!fb?.auth.currentUser?.providerData?.some(x => x.providerId === "password");
 // Connexion Google : popup (fallback redirection si la popup est impossible, ex. certaines webviews)
 export async function signInGoogle() {
   await loadFirebase();

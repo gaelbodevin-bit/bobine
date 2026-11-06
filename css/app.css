@@ -574,3 +574,8 @@ html[class*=rad-] .bdg:not(.sheet):not(#tabs),html[class*=rad-] .bdot:not(.sheet
 .refin{display:flex;gap:8px;margin-top:10px}.refin input{flex:1;min-width:0;text-transform:uppercase;letter-spacing:.12em;font-weight:700;background:var(--s2);border:1px solid var(--s3);border-radius:12px;padding:10px 12px;font-size:16px;color:var(--tx);outline:0}.refin input:focus{border-color:var(--ac)}
 #refc>svg:first-child{color:var(--ac)}
 .refpromo p b{color:var(--tx)}
+.refpend{font-style:normal;font-size:12px;color:var(--ac);margin-left:6px}
+.refck{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:9px;font-size:14px;color:var(--mu)}
+.refck>span{width:20px;height:20px;border-radius:50%;border:2px solid var(--s3);display:grid;place-items:center;font-size:12px;font-weight:800;flex:none}
+.refck.ok{color:var(--tx)}.refck.ok>span{background:var(--ac);border-color:var(--ac);color:var(--ac-tx,#1a1400)}
+.btn.sm{padding:5px 10px;font-size:13px;min-height:0}

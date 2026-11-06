@@ -85,7 +85,7 @@ const pimg = (path, alt, size = "w342") => path
 // ═════════════ État UI + caches de détails ═════════════
 const ui = { tab: "series", seriesFilter: "watching", sugSeg: "movie", sug: {}, movieSeg: "watchlist", seriesView: (() => { try { return localStorage.getItem("bobine:sview") || "grid"; } catch { return "grid"; } })(), q: "", pushStatus: null, mode: null };
 ui.nospoil = (() => { try { return localStorage.getItem("bobine:nospoil") === "1"; } catch { return false; } })();
-const APP_V = "v65";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
+const APP_V = "v66";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
 const ADMINS = ["gael.bodevin@gmail.com", "bluecellproduction@gmail.com", "fast.and.spermious@gmail.com"];
 const isAdmin = () => ADMINS.includes((store.data.user?.email || "").toLowerCase());
 
@@ -1370,6 +1370,7 @@ function loadRef(force) {
   if (ui.refP && !force) return ui.refP;
   if (!ui.ref) { try { ui.ref = JSON.parse(localStorage.getItem(refKey("ref")) || "null"); } catch { } }
   ui.refP = store.callFn("referral", { action: "me" }).then(r => {
+    if (r?.referredBy && r.referredBy !== ui.ref?.referredBy) store.setSignup({ referredBy: r.referredBy }).catch(() => { });
     ui.ref = r; try { localStorage.setItem(refKey("ref"), JSON.stringify(r)); } catch { }
     const c = $("#refc"); if (c) c.outerHTML = refCard();
     if (sheets.at(-1)?.refsheet) sheets.at(-1).refresh();
@@ -1384,7 +1385,7 @@ function refCard() {
   const r = ui.ref, goal = r?.goal || 3, n = Math.min(r?.count || 0, goal);
   const sub = !r ? BL("Invite 3 amis : Premium offert à vie", "Invite 3 friends: Premium for life, free")
     : r.rewarded ? BL(`${r.count} ami${r.count > 1 ? "s" : ""} parrainé${r.count > 1 ? "s" : ""} · Premium offert ✓`, `${r.count} friend${r.count > 1 ? "s" : ""} referred · Premium unlocked ✓`)
-    : BL(`${n}/${goal} amis · Premium offert au ${goal}e`, `${n}/${goal} friends · Premium free at ${goal}`);
+    : BL(`${n}/${goal} amis${r.pending ? ` (+${r.pending} en attente)` : ""} · Premium offert au ${goal}e`, `${n}/${goal} friends${r.pending ? ` (+${r.pending} pending)` : ""} · Premium free at ${goal}`);
   return `<button class="card setlink" id="refc" data-a="referral">${bsvg("users")}<div><b>${BL("Parrainage", "Invite friends")}</b><span>${sub}</span></div>${I.chev}</button>`;
 }
 function openReferral() {
@@ -1400,17 +1401,30 @@ function openReferral() {
         : BL(`Quand ${goal} amis s'inscrivent avec ton code, <b>Playwatch Premium t'est offert à vie</b>.`, `When ${goal} friends sign up with your code, <b>you get Playwatch Premium for life</b>.`)}</p>
       <div class="refcode" data-a="refCopy" title="${BL("Copier", "Copy")}">${esc(r.code)}<span>${BL("Toucher pour copier", "Tap to copy")}</span></div>
       <button class="btn pri big" data-a="refShare" style="width:100%">${I.share}${BL("Partager mon code", "Share my code")}</button>
-      <div class="card refprog"><div class="bsr"><span>${BL("Amis parrainés", "Friends referred")}</span><b>${r.count || 0}${r.rewarded ? "" : " / " + goal}</b></div>
+      <div class="card refprog"><div class="bsr"><span>${BL("Amis parrainés", "Friends referred")}${r.pending ? ` <em class="refpend">${BL(`+${r.pending} en attente`, `+${r.pending} pending`)}</em>` : ""}</span><b>${r.count || 0}${r.rewarded ? "" : " / " + goal}</b></div>
         <div class="bpb big"><i style="width:${Math.round(n / goal * 100)}%"></i></div>
         <small>${r.rewarded ? BL("Premium offert ✓ Merci !", "Premium unlocked ✓ Thank you!") : premium.isPremium() ? BL("Tu as déjà Premium : merci de faire connaître l'appli !", "You already have Premium: thanks for spreading the word!") : BL(`Encore ${goal - n} ami${goal - n > 1 ? "s" : ""}`, `${goal - n} more friend${goal - n > 1 ? "s" : ""} to go`)}</small></div>
-      ${r.referredBy ? `<p class="refsub" style="margin-top:14px">${BL("Tu as été parrainé avec le code", "You joined with code")} <b>${esc(r.referredBy)}</b>.</p>`
+      ${r.referredBy ? refMine(r)
         : r.canClaim ? `<div class="card refclaim"><b>${BL("Un ami t'a donné un code ?", "Got a code from a friend?")}</b>
           <div class="refin"><input id="refin" maxlength="8" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ABC123"><button class="btn" data-a="refClaim">${BL("Valider", "Apply")}</button></div>
           <small>${BL(`Possible jusqu'au ${new Date(r.claimUntil).toLocaleDateString(LOC, { day: "numeric", month: "long" })}.`, `Available until ${new Date(r.claimUntil).toLocaleDateString(LOC, { day: "numeric", month: "long" })}.`)}</small></div>` : ""}
-      <p class="bnote">${BL("Un ami compte quand il crée son compte Playwatch et entre ton code (Profil → Parrainage) dans les 14 jours.", "A friend counts when they create a Playwatch account and enter your code (Profile → Invite friends) within 14 days.")}</p></div>`;
+      <p class="bnote">${BL("Un ami compte quand il entre ton code dans les 14 jours après son inscription, puis utilise vraiment l'appli : compte vérifié, 5 titres ajoutés et l'appli ouverte sur 2 jours différents.", "A friend counts once they enter your code within 14 days of signing up and really use the app: verified account, 5 titles added and the app opened on 2 different days.")}</p></div>`;
   });
   sh.refsheet = true;
   loadRef(true).catch(e => { sh.state.err = BL("Parrainage indisponible pour le moment. Réessaie plus tard.", "Referrals are unavailable right now. Try again later."); sh.refresh(); });
+}
+// Côté filleul : où en est la validation de son parrainage
+function refMine(r) {
+  const head = `<p class="refsub" style="margin-top:14px">${BL("Tu as été parrainé avec le code", "You joined with code")} <b>${esc(r.referredBy)}</b>.</p>`;
+  if (r.myStatus === "valid") return head + `<p class="refsub">${BL("Parrainage validé ✓ Merci !", "Referral confirmed ✓ Thanks!")}</p>`;
+  if (r.myStatus === "duplicate") return head + `<p class="refsub">${BL("Ce parrainage n'a pas pu être validé.", "This referral couldn't be confirmed.")}</p>`;
+  const c = r.myConditions; if (!c) return head;
+  const row = (ok, t) => `<div class="refck ${ok ? "ok" : ""}"><span>${ok ? "✓" : ""}</span>${t}</div>`;
+  return head + `<div class="card refclaim"><b>${BL("Pour valider le parrainage de ton ami", "To confirm your friend's referral")}</b>
+    ${row(c.verified, BL("Compte vérifié", "Verified account") + (!c.verified && store.isEmailUser() ? ` <button class="btn sm" data-a="refVerify">${BL("Recevoir l'e-mail de confirmation", "Send confirmation email")}</button>` : ""))}
+    ${row(c.titles >= c.titlesNeeded, BL(`${c.titlesNeeded} titres dans ta liste (${Math.min(c.titles, c.titlesNeeded)}/${c.titlesNeeded})`, `${c.titlesNeeded} titles in your list (${Math.min(c.titles, c.titlesNeeded)}/${c.titlesNeeded})`))}
+    ${row(c.days >= c.daysNeeded, BL(`Appli ouverte sur ${c.daysNeeded} jours différents (${Math.min(c.days, c.daysNeeded)}/${c.daysNeeded})`, `App opened on ${c.daysNeeded} different days (${Math.min(c.days, c.daysNeeded)}/${c.daysNeeded})`))}
+    <small>${BL("C'est vérifié automatiquement à chaque ouverture de l'appli.", "This is checked automatically each time you open the app.")}</small></div>`;
 }
 async function shareRef() {
   const r = ui.ref; if (!r) return;
@@ -1425,7 +1439,8 @@ async function claimRef(code) {
   try {
     const r = await store.callFn("referral", { action: "claim", code });
     ui.ref = { ...(ui.ref || {}), ...r }; try { localStorage.setItem(refKey("ref"), JSON.stringify(ui.ref)); localStorage.removeItem("bobine:refpending"); } catch { }
-    toast(BL("Code validé, merci ! Ton ami est crédité.", "Code applied, thanks! Your friend gets the credit."));
+    toast(r.myStatus === "valid" ? BL("Code validé, merci ! Ton ami est crédité.", "Code applied, thanks! Your friend gets the credit.")
+      : BL("Code enregistré ! Il sera validé quand tu utiliseras l'appli (5 titres, 2 jours).", "Code saved! It'll be confirmed once you use the app (5 titles, 2 days)."));
     const c = $("#refc"); if (c) c.outerHTML = refCard();
     if (sheets.at(-1)?.refsheet) sheets.at(-1).refresh();
   } catch (e) {
@@ -1450,7 +1465,7 @@ function refStartup(d) {
       <div class="bhalo" style="--bc:var(--ac)"><span class="bdg xl" style="--bc:var(--ac)">${bsvg("users")}</span></div>
       <h2>${BL("Parraine tes amis", "Invite your friends")}</h2>
       <p>${premium.isPremium() ? BL("Fais découvrir Playwatch avec ton code perso et débloque le badge Ambassadeur.", "Share Playwatch with your personal code and unlock the Ambassador badge.")
-        : BL("3 amis qui s'inscrivent avec ton code = <b>Playwatch Premium offert à vie</b>.", "3 friends who sign up with your code = <b>Playwatch Premium for life, free</b>.")}</p>
+        : BL("3 amis qui s'inscrivent avec ton code et utilisent l'appli = <b>Playwatch Premium offert à vie</b>.", "3 friends who sign up with your code and use the app = <b>Playwatch Premium for life, free</b>.")}</p>
       <div class="bbtns"><button class="btn pri" data-a="refFromPromo">${bsvg("users")}${BL("Voir mon code", "See my code")}</button><button class="btn" data-a="closeSheet">${BL("Plus tard", "Later")}</button></div></div>`);
   };
   // on n'annonce le parrainage que si le serveur répond (sinon la fenêtre serait « consommée » pour rien)
@@ -1473,7 +1488,8 @@ function trackOrigin(d) {
   try { if (localStorage.getItem(k) === day + plat) return; } catch { }
   store.setSignup({
     email: u.email || null, origin: d.origin, createdAt: u.created || null, platforms: d.platforms || { [plat]: now },
-    lastSeen: now, lastPlatform: plat, v: APP_V, lang: UILANG, region: UIREGION, premium: premium.isPremium()
+    lastSeen: now, lastPlatform: plat, v: APP_V, lang: UILANG, region: UIREGION, premium: premium.isPremium(),
+    premiumSource: store.data.entitlement?.source || null, referredBy: ui.ref?.referredBy || null
   }).then(() => { try { localStorage.setItem(k, day + plat); } catch { } }).catch(e => { if (e?.code !== "permission-denied") logError(e, "signup"); });
 }
 function openSignups() {
@@ -1491,7 +1507,8 @@ function openSignups() {
     for (const r of list) {
       const plats = Object.keys(r.platforms || {}).map(p => PLAT_N[p] || p).join(", ");
       const org = r.origin === "avant-suivi" ? "compte antérieur" : PLAT_N[r.origin] || "?";
-      h += `<div class="errrow" style="padding:10px 0;border-bottom:1px solid var(--line)"><b style="display:block;overflow-wrap:anywhere">${esc(r.email || r.id)}${r.premium ? " ✨" : ""}</b><small style="color:var(--mu)">Créé le ${dt(r.createdAt)} · origine : ${esc(org)} · vu le ${dt(r.lastSeen)}${plats ? " · " + esc(plats) : ""}${r.region ? " · " + esc(r.region) : ""}</small></div>`;
+      const ps = r.premium ? (r.premiumSource === "referral" ? " ✨ (parrainage)" : " ✨") : "";
+      h += `<div class="errrow" style="padding:10px 0;border-bottom:1px solid var(--line)"><b style="display:block;overflow-wrap:anywhere">${esc(r.email || r.id)}${ps}</b><small style="color:var(--mu)">Créé le ${dt(r.createdAt)} · origine : ${esc(org)} · vu le ${dt(r.lastSeen)}${plats ? " · " + esc(plats) : ""}${r.region ? " · " + esc(r.region) : ""}${r.referredBy ? " · parrainé (" + esc(r.referredBy) + ")" : ""}</small></div>`;
     }
     return h + `</div>`;
   });
@@ -2420,6 +2437,7 @@ const A = {
   refShare: () => shareRef(),
   refCopy: async () => { try { await navigator.clipboard.writeText(ui.ref?.code || ""); toast(BL("Code copié", "Code copied")); } catch { } },
   refClaim: () => claimRef($("#refin")?.value),
+  refVerify: async () => { try { await store.sendVerifyEmail(); toast(BL("E-mail envoyé : clique sur le lien qu'il contient", "Email sent: click the link inside")); } catch (e) { toast(e?.code === "auth/too-many-requests" ? BL("Patiente un peu avant de redemander l'e-mail", "Wait a bit before asking again") : BL("Envoi impossible pour le moment", "Couldn't send it right now")); } },
   signupF: el => { const sh = sheets.at(-1); if (sh) { sh.state.f = el.dataset.v; sh.refresh(); } },
   gretry: () => doGSearch(),
   badges: () => openBadges(),
