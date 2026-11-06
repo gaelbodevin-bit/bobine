@@ -85,7 +85,7 @@ const pimg = (path, alt, size = "w342") => path
 // ═════════════ État UI + caches de détails ═════════════
 const ui = { tab: "series", seriesFilter: "watching", sugSeg: "movie", sug: {}, movieSeg: "watchlist", seriesView: (() => { try { return localStorage.getItem("bobine:sview") || "grid"; } catch { return "grid"; } })(), q: "", pushStatus: null, mode: null };
 ui.nospoil = (() => { try { return localStorage.getItem("bobine:nospoil") === "1"; } catch { return false; } })();
-const APP_V = "v63";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
+const APP_V = "v64";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
 const ADMINS = ["gael.bodevin@gmail.com", "bluecellproduction@gmail.com", "fast.and.spermious@gmail.com"];
 const isAdmin = () => ADMINS.includes((store.data.user?.email || "").toLowerCase());
 
@@ -1453,7 +1453,8 @@ function refStartup(d) {
         : BL("3 amis qui s'inscrivent avec ton code = <b>Playwatch Premium offert à vie</b>.", "3 friends who sign up with your code = <b>Playwatch Premium for life, free</b>.")}</p>
       <div class="bbtns"><button class="btn pri" data-a="refFromPromo">${bsvg("users")}${BL("Voir mon code", "See my code")}</button><button class="btn" data-a="closeSheet">${BL("Plus tard", "Later")}</button></div></div>`);
   };
-  setTimeout(() => tryShow(), 4000);
+  // on n'annonce le parrainage que si le serveur répond (sinon la fenêtre serait « consommée » pour rien)
+  loadRef().then(r => { if (r?.code) setTimeout(() => tryShow(), 4000); }).catch(() => { });
 }
 
 // ═════════════ Origine des comptes (administrateur) ═════════════
