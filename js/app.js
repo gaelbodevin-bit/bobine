@@ -85,7 +85,7 @@ const pimg = (path, alt, size = "w342") => path
 // ═════════════ État UI + caches de détails ═════════════
 const ui = { tab: "series", seriesFilter: "watching", sugSeg: "movie", sug: {}, movieSeg: "watchlist", seriesView: (() => { try { return localStorage.getItem("bobine:sview") || "grid"; } catch { return "grid"; } })(), q: "", pushStatus: null, mode: null };
 ui.nospoil = (() => { try { return localStorage.getItem("bobine:nospoil") === "1"; } catch { return false; } })();
-const APP_V = "v58";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
+const APP_V = "v59";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
 const ADMINS = ["gael.bodevin@gmail.com", "bluecellproduction@gmail.com", "fast.and.spermious@gmail.com"];
 const isAdmin = () => ADMINS.includes((store.data.user?.email || "").toLowerCase());
 
@@ -956,6 +956,7 @@ function vSettings(v, force) {
   <div class="btns">${u && !u.local ? `<button class="btn ghost" data-a="logout">Se déconnecter</button>` : ""}<button class="btn ghost danger" data-a="wipe">Tout effacer</button></div>
   ${u && !u.local ? `<div class="card"><h3>Supprimer mon compte</h3><p>Supprime définitivement ton compte et toutes tes données (séries, films, jeux, notifications). Pense à exporter une sauvegarde avant.</p>
     <div id="delzone"><button class="btn ghost danger" data-a="delAccount" style="width:100%">${I.trash}Supprimer mon compte</button></div></div>` : ""}
+  ${isAdmin() ? `<button class="card setlink" data-a="signups">${I.user || I.spark}<div><b>Comptes</b><span>Administrateur : inscrits, origine (Google Play ou web) et dernière visite</span></div>${I.chev}</button>` : ""}
   ${isAdmin() ? `<button class="card setlink" data-a="errLog">${I.spark}<div><b>Journal des plantages</b><span>Administrateur : erreurs remontées par les appareils des utilisateurs</span></div>${I.chev}</button>` : ""}
   <div class="foot"><a href="${UILANG === "en" ? "privacy-en.html" : "privacy.html?lang=fr"}" target="_blank" rel="noopener">Politique de confidentialité</a> · <a href="${UILANG === "en" ? "delete-account-en.html" : "delete-account.html?lang=fr"}" target="_blank" rel="noopener">Suppression des données</a><br>Ce produit utilise l'API <a href="https://www.themoviedb.org" target="_blank" rel="noopener">TMDB</a> mais n'est ni approuvé ni certifié par TMDB. Jeux : <a href="https://rawg.io" target="_blank" rel="noopener">RAWG</a>.</div>
 `;
@@ -1352,6 +1353,48 @@ function openErrLog() {
   });
   store.listErrors(60).then(l => { sh.state.list = l; sh.refresh(); })
     .catch(e => { sh.state.err = e.code === "permission-denied" ? "Accès refusé : connecte-toi avec un compte administrateur (Google ou e-mail vérifié)." : (e.message || String(e)); sh.refresh(); });
+}
+
+// ═════════════ Origine des comptes (administrateur) ═════════════
+// android = appli Google Play · web-installee = version web ajoutée à l'écran d'accueil · web = navigateur
+const PLAT_N = { android: "Appli Google Play", "web-installee": "Web installée", web: "Navigateur" };
+const platform = () => premium.isTWA() ? "android" : push.isStandalone() ? "web-installee" : "web";
+// Au démarrage (une fois par jour et par appareil) : origine du compte (fixée une seule fois), plateformes utilisées, dernière visite
+function trackOrigin(d) {
+  const u = store.data.user; if (!u || u.local) return;
+  const plat = platform(), now = Date.now(), patch = {};
+  // Origine : seulement pour les comptes créés récemment (pour les anciens, on ne peut pas savoir d'où ils venaient)
+  if (!d.origin) { patch.origin = u.created && now - u.created < 3 * 86400e3 ? plat : "avant-suivi"; patch.originAt = now; }
+  if (!d.platforms?.[plat]) patch.platforms = { ...(d.platforms || {}), [plat]: now };
+  if (Object.keys(patch).length) { store.setUserDoc(patch).catch(() => { }); Object.assign(d, patch); }
+  const day = new Date().toDateString(), k = "bobine:seen:" + u.uid;
+  try { if (localStorage.getItem(k) === day + plat) return; } catch { }
+  store.setSignup({
+    email: u.email || null, origin: d.origin, createdAt: u.created || null, platforms: d.platforms || { [plat]: now },
+    lastSeen: now, lastPlatform: plat, v: APP_V, lang: UILANG, region: UIREGION, premium: premium.isPremium()
+  }).then(() => { try { localStorage.setItem(k, day + plat); } catch { } }).catch(e => { if (e?.code !== "permission-denied") logError(e, "signup"); });
+}
+function openSignups() {
+  const sh = openSheet(sh => {
+    const L = sh.state.list, f = sh.state.f || "all";
+    let h = `<div class="body"><h2 style="margin:8px 0 4px">Comptes</h2><p style="color:var(--mu);font-size:13px;margin:0 0 14px">Comptes Playwatch, du plus récent au plus ancien, avec leur origine et les plateformes qu'ils utilisent. L'origine n'est connue que pour les comptes créés depuis la v59.</p>`;
+    if (sh.state.err) return h + `<div class="info">${I.lock}<div>${esc(sh.state.err)}</div></div></div>`;
+    if (!L) return h + `<div class="sk" style="height:140px;border-radius:12px"></div></div>`;
+    const cnt = o => L.filter(r => r.origin === o).length, week = L.filter(r => r.createdAt && Date.now() - r.createdAt < 7 * 86400e3).length;
+    h += `<div class="stats" style="margin-bottom:12px"><div class="stat"><b>${L.length}</b><span>comptes</span></div><div class="stat"><b>${week}</b><span>créés en 7 j</span></div><div class="stat"><b>${cnt("android")}</b><span>via Google Play</span></div><div class="stat"><b>${cnt("web") + cnt("web-installee")}</b><span>via le web</span></div></div>`;
+    h += `<div class="chips" style="margin-bottom:10px">${[["all", "Tous"], ["android", "Google Play"], ["web", "Web"], ["avant-suivi", "Anciens"]].map(([k, n]) => `<button class="chip${f === k ? " on" : ""}" data-a="signupF" data-v="${k}">${n}</button>`).join("")}</div>`;
+    const list = L.filter(r => f === "all" || (f === "web" ? r.origin === "web" || r.origin === "web-installee" : r.origin === f));
+    if (!list.length) return h + `<div class="empty" style="padding:24px 10px"><p>Aucun compte dans cette catégorie.</p></div></div>`;
+    const dt = t => t ? new Date(t).toLocaleDateString(LOC, { day: "numeric", month: "short", year: "2-digit" }) : "?";
+    for (const r of list) {
+      const plats = Object.keys(r.platforms || {}).map(p => PLAT_N[p] || p).join(", ");
+      const org = r.origin === "avant-suivi" ? "compte antérieur" : PLAT_N[r.origin] || "?";
+      h += `<div class="errrow" style="padding:10px 0;border-bottom:1px solid var(--line)"><b style="display:block;overflow-wrap:anywhere">${esc(r.email || r.id)}${r.premium ? " ✨" : ""}</b><small style="color:var(--mu)">Créé le ${dt(r.createdAt)} · origine : ${esc(org)} · vu le ${dt(r.lastSeen)}${plats ? " · " + esc(plats) : ""}${r.region ? " · " + esc(r.region) : ""}</small></div>`;
+    }
+    return h + `</div>`;
+  });
+  store.listSignups().then(l => { sh.state.list = l; sh.refresh(); })
+    .catch(e => { sh.state.err = e.code === "permission-denied" ? "Accès refusé : il faut publier les nouvelles règles Firestore (collection « signups »)." : (e.message || String(e)); sh.refresh(); });
 }
 
 // ═════════════ Calendrier abonnable (Premium) ═════════════
@@ -2269,6 +2312,8 @@ const A = {
   recap: el => openRecap(el.dataset.v ? +el.dataset.v : recapYear()),
   recapShare: () => shareRecap(),
   closeSheet: () => history.back(),
+  signups: () => openSignups(),
+  signupF: el => { const sh = sheets.at(-1); if (sh) { sh.state.f = el.dataset.v; sh.refresh(); } },
   gretry: () => doGSearch(),
   badges: () => openBadges(),
   badge: el => openBadge(el.dataset.v),
@@ -2783,6 +2828,7 @@ async function startApp() {
   // Préférences liées au compte (mode sans spoiler choisi sur un autre appareil, calendrier)
   store.getUserDoc().then(d => {
     ui.userDoc = d; if (typeof d.nospoil === "boolean" && d.nospoil !== ui.nospoil) setNoSpoil(d.nospoil, true); syncPresets(d);
+    trackOrigin(d);
     // Apparence : celle du compte si elle est plus récente ; sinon (première fois), on envoie celle de cet appareil
     if (!applyAccountLook(d) && !d.look && lookAtLocal()) syncLookSoon();
     // Langue et pays de l'utilisateur : utilisés par les notifications et le calendrier (serveur)

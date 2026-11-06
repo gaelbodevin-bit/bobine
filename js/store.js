@@ -340,6 +340,20 @@ export async function setUserDoc(data) {
   return fs.setDoc(fs.doc(db, "users", state.user.uid), data, { merge: true });
 }
 
+// ═════════════════ Registre des comptes (signups/{uid}) ═════════════════
+// Une fiche courte par compte (e-mail, origine, plateformes, dernière visite) : écrite par le compte lui-même,
+// lisible uniquement par l'administrateur (panneau « Comptes »). Rien de la bibliothèque n'y figure.
+export async function setSignup(data) {
+  if (!state.user || state.user.local) return;
+  const { db, fs } = fb;
+  return fs.setDoc(fs.doc(db, "signups", state.user.uid), data, { merge: true });
+}
+export async function listSignups(n = 300) {
+  const { db, fs } = fb;
+  const snap = await fs.getDocs(fs.query(fs.collection(db, "signups"), fs.orderBy("createdAt", "desc"), fs.limit(n)));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
 // ═════════════════ Journal des plantages ═════════════════
 // Chaque erreur est d'abord gardée sur l'appareil (au cas où Firebase lui-même ne se charge pas),
 // puis envoyée dans la collection « errors » dès que possible. Lecture réservée à l'administrateur.
