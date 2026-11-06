@@ -85,7 +85,7 @@ const pimg = (path, alt, size = "w342") => path
 // ═════════════ État UI + caches de détails ═════════════
 const ui = { tab: "series", seriesFilter: "watching", sugSeg: "movie", sug: {}, movieSeg: "watchlist", seriesView: (() => { try { return localStorage.getItem("bobine:sview") || "grid"; } catch { return "grid"; } })(), q: "", pushStatus: null, mode: null };
 ui.nospoil = (() => { try { return localStorage.getItem("bobine:nospoil") === "1"; } catch { return false; } })();
-const APP_V = "v62";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
+const APP_V = "v63";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
 const ADMINS = ["gael.bodevin@gmail.com", "bluecellproduction@gmail.com", "fast.and.spermious@gmail.com"];
 const isAdmin = () => ADMINS.includes((store.data.user?.email || "").toLowerCase());
 
@@ -919,6 +919,7 @@ function vProfile(v, force) {
   ${premiumCard()}
   ${recapCard()}
   ${badgeCard()}
+  ${refCard()}
   <div class="stats" id="pstats">${profStats()}</div>
   ${premium.isPremium() ? `<div class="card" id="advstats">${advStats()}</div>` : lockedCard("Statistiques avancées", "Récap de l'année, temps passé, genres et chaînes préférés, décennies, notes moyennes, top séries, plateformes de jeux.")}
   <button class="card setlink" data-a="tab" data-v="settings">${I.gear}<div><b>Paramètres</b><span>Notifications, thème, contenus, import / sauvegarde, clés TMDB et RAWG, compte</span></div>${I.chev}</button>
@@ -1039,6 +1040,7 @@ function openPaywall(why) {
       ${ch === "none" ? `<p class="pwsub" style="margin-top:18px">Le paiement arrive bientôt sur cet appareil.</p>` :
         `<button class="btn pri big" data-a="buyPremium" style="width:100%;margin-top:18px">Débloquer — ${esc(sh.state.price || premium.PRICE_FALLBACK)}</button>`}
       <button class="btn ghost" data-a="restorePremium" style="width:100%;margin-top:10px">Restaurer mes achats</button>
+      <button class="btn ghost" data-a="referral" style="width:100%;margin-top:6px">${bsvg("users")}Ou gratuit : parraine 3 amis</button>
       <p class="pwlegal">Paiement unique, sans abonnement. ${ch === "play" ? "Paiement sécurisé par Google Play." : ch === "stripe" ? "Paiement sécurisé par Stripe. En achetant, tu demandes l'accès immédiat à Premium et renonces à ton droit de rétractation de 14 jours pour ce contenu numérique." : ""} Le suivi de tes séries, films et jeux reste gratuit et illimité.</p></div>`;
   });
   premium.price().then(p => { sh.state.price = p; sh.refresh(); }).catch(() => { });
@@ -1107,7 +1109,8 @@ const BIC = {
   box: "M3 8l9-5 9 5v8l-9 5-9-5zM3 8l9 5 9-5M12 13v8", hourglass: "M7 3h10M7 21h10M8 3v3l4 6-4 6v3M16 3v3l-4 6 4 6v3",
   layers: "M12 3l9 5-9 5-9-5zM3 13l9 5 9-5", rocket: "M12 3c4 2 6 6 6 10l-3 3H9l-3-3c0-4 2-8 6-10zM12 9a1.5 1.5 0 1 0 0 3 1.5 1.5 0 1 0 0-3zM9 16l-2 5 3-2M15 16l2 5-3-2",
   buoy: "M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18zM12 8a4 4 0 1 0 0 8 4 4 0 1 0 0-8zM5.6 5.6l3.6 3.6M14.8 14.8l3.6 3.6M18.4 5.6l-3.6 3.6M9.2 14.8l-3.6 3.6",
-  heart: "M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.5-7 10-7 10z", share: "M12 3v12M7 8l5-5 5 5M5 14v6h14v-6"
+  heart: "M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.5-7 10-7 10z", share: "M12 3v12M7 8l5-5 5 5M5 14v6h14v-6",
+  users: "M9 11a4 4 0 1 0 0-8 4 4 0 1 0 0 8zM2 21v-1a6 6 0 0 1 12 0v1M16 3.5a4 4 0 0 1 0 7.5M18 14a6 6 0 0 1 4 6v1"
 };
 const bsvg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${BIC[k]}"/></svg>`;
 // u : [singulier FR, pluriel FR, singulier EN, pluriel EN]
@@ -1129,7 +1132,8 @@ const BADGES = [
   { id: "pioneer", fam: "sp", ic: "rocket", n: ["Pionnier", "Pioneer"], r: ["Compte créé avant le 1er janvier 2027.", "Account created before January 1, 2027."], one: true },
   { id: "tvtime", fam: "sp", ic: "buoy", n: ["Rescapé de TV Time", "TV Time refugee"], r: ["Historique TV Time importé dans Playwatch.", "TV Time history imported into Playwatch."], one: true },
   { id: "supporter", fam: "sp", ic: "heart", n: ["Soutien", "Supporter"], r: ["Playwatch Premium : merci !", "Playwatch Premium: thank you!"], one: true },
-  { id: "recap", fam: "sp", ic: "share", n: ["Rétro", "Year in review"], r: ["Rétro de l’année partagée.", "Year in review shared."], one: true }
+  { id: "recap", fam: "sp", ic: "share", n: ["Rétro", "Year in review"], r: ["Rétro de l’année partagée.", "Year in review shared."], one: true },
+  { id: "ambassador", fam: "sp", ic: "users", n: ["Ambassadeur", "Ambassador"], r: ["Amis parrainés qui ont rejoint Playwatch.", "Friends who joined Playwatch with your code."], lv: [1, 3, 10], u: ["ami parrainé", "amis parrainés", "friend referred", "friends referred"] }
 ];
 const BFAM = () => [["tv", BL("Séries", "TV shows")], ["mv", BL("Films", "Movies")], ["gm", BL("Jeux vidéo", "Video games")], ["sp", BL("Spéciaux", "Special")]]
   .filter(([f]) => f === "sp" || (f === "gm" ? ui.domains.games : ui.domains.av));
@@ -1166,7 +1170,8 @@ function badgeValues() {
     gamer: beaten.length, library: games.length, hours: Math.floor(games.reduce((n, g) => n + (g.hours || 0), 0)),
     multi: new Set(beaten.map(g => g.platform).filter(Boolean)).size,
     pioneer: u.created && u.created < PIONEER_END ? 1 : 0,
-    tvtime: ui.bflags?.tvtime ? 1 : 0, supporter: premium.isPremium() ? 1 : 0, recap: ui.bflags?.recap ? 1 : 0
+    tvtime: ui.bflags?.tvtime ? 1 : 0, supporter: premium.isPremium() ? 1 : 0, recap: ui.bflags?.recap ? 1 : 0,
+    ambassador: ui.ref?.count || 0
   };
 }
 const levelOf = (b, v) => b.one ? (v ? 1 : 0) : b.lv.filter(x => v >= x).length;
@@ -1353,6 +1358,102 @@ function openErrLog() {
   });
   store.listErrors(60).then(l => { sh.state.list = l; sh.refresh(); })
     .catch(e => { sh.state.err = e.code === "permission-denied" ? "Accès refusé : connecte-toi avec un compte administrateur (Google ou e-mail vérifié)." : (e.message || String(e)); sh.refresh(); });
+}
+
+// ═════════════ Parrainage ═════════════
+// Code perso (6 caractères) créé par le serveur ; Premium offert au parrain au 3e filleul (fonction « referral »).
+// Un filleul entre le code dans les 14 jours suivant son inscription (ou ouvre un lien …/?ref=CODE sur la version web).
+const refKey = k => `bobine:${k}:${store.data.user?.uid || "x"}`;
+const canRefer = () => { const u = store.data.user; return !!u && !u.local && store.hasFirebase; };
+function loadRef(force) {
+  if (!canRefer()) return Promise.resolve(null);
+  if (ui.refP && !force) return ui.refP;
+  if (!ui.ref) { try { ui.ref = JSON.parse(localStorage.getItem(refKey("ref")) || "null"); } catch { } }
+  ui.refP = store.callFn("referral", { action: "me" }).then(r => {
+    ui.ref = r; try { localStorage.setItem(refKey("ref"), JSON.stringify(r)); } catch { }
+    const c = $("#refc"); if (c) c.outerHTML = refCard();
+    if (sheets.at(-1)?.refsheet) sheets.at(-1).refresh();
+    schedBadges(1500);
+    return r;
+  }).catch(e => { ui.refP = null; logError(e, "referral"); throw e; });
+  return ui.refP;
+}
+const refLink = code => `https://playwatch.app/${UILANG === "en" ? "en" : ""}?ref=${code}`;
+function refCard() {
+  if (!canRefer()) return "";
+  const r = ui.ref, goal = r?.goal || 3, n = Math.min(r?.count || 0, goal);
+  const sub = !r ? BL("Invite 3 amis : Premium offert à vie", "Invite 3 friends: Premium for life, free")
+    : r.rewarded ? BL(`${r.count} ami${r.count > 1 ? "s" : ""} parrainé${r.count > 1 ? "s" : ""} · Premium offert ✓`, `${r.count} friend${r.count > 1 ? "s" : ""} referred · Premium unlocked ✓`)
+    : BL(`${n}/${goal} amis · Premium offert au ${goal}e`, `${n}/${goal} friends · Premium free at ${goal}`);
+  return `<button class="card setlink" id="refc" data-a="referral">${bsvg("users")}<div><b>${BL("Parrainage", "Invite friends")}</b><span>${sub}</span></div>${I.chev}</button>`;
+}
+function openReferral() {
+  if (!canRefer()) return toast(BL("Le parrainage nécessite un compte", "Referrals need an account"));
+  const sh = openSheet(sh => {
+    const r = ui.ref;
+    if (!r) return `<div class="body refs"><h2>${BL("Parrainage", "Invite friends")}</h2>${sh.state.err ? `<div class="info">${I.lock}<div>${esc(sh.state.err)}</div></div>` : `<div class="sk" style="height:180px;border-radius:16px"></div>`}</div>`;
+    const goal = r.goal || 3, n = Math.min(r.count || 0, goal);
+    return `<div class="body refs"><div class="refhero">${bsvg("users")}</div>
+      <h2>${BL("Invite tes amis", "Invite your friends")}</h2>
+      <p class="refsub">${r.rewarded || premium.isPremium()
+        ? BL("Fais découvrir Playwatch : chaque ami qui s'inscrit avec ton code compte pour le badge Ambassadeur.", "Spread the word: every friend who signs up with your code counts toward the Ambassador badge.")
+        : BL(`Quand ${goal} amis s'inscrivent avec ton code, <b>Playwatch Premium t'est offert à vie</b>.`, `When ${goal} friends sign up with your code, <b>you get Playwatch Premium for life</b>.`)}</p>
+      <div class="refcode" data-a="refCopy" title="${BL("Copier", "Copy")}">${esc(r.code)}<span>${BL("Toucher pour copier", "Tap to copy")}</span></div>
+      <button class="btn pri big" data-a="refShare" style="width:100%">${I.share}${BL("Partager mon code", "Share my code")}</button>
+      <div class="card refprog"><div class="bsr"><span>${BL("Amis parrainés", "Friends referred")}</span><b>${r.count || 0}${r.rewarded ? "" : " / " + goal}</b></div>
+        <div class="bpb big"><i style="width:${Math.round(n / goal * 100)}%"></i></div>
+        <small>${r.rewarded ? BL("Premium offert ✓ Merci !", "Premium unlocked ✓ Thank you!") : premium.isPremium() ? BL("Tu as déjà Premium : merci de faire connaître l'appli !", "You already have Premium: thanks for spreading the word!") : BL(`Encore ${goal - n} ami${goal - n > 1 ? "s" : ""}`, `${goal - n} more friend${goal - n > 1 ? "s" : ""} to go`)}</small></div>
+      ${r.referredBy ? `<p class="refsub" style="margin-top:14px">${BL("Tu as été parrainé avec le code", "You joined with code")} <b>${esc(r.referredBy)}</b>.</p>`
+        : r.canClaim ? `<div class="card refclaim"><b>${BL("Un ami t'a donné un code ?", "Got a code from a friend?")}</b>
+          <div class="refin"><input id="refin" maxlength="8" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ABC123"><button class="btn" data-a="refClaim">${BL("Valider", "Apply")}</button></div>
+          <small>${BL(`Possible jusqu'au ${new Date(r.claimUntil).toLocaleDateString(LOC, { day: "numeric", month: "long" })}.`, `Available until ${new Date(r.claimUntil).toLocaleDateString(LOC, { day: "numeric", month: "long" })}.`)}</small></div>` : ""}
+      <p class="bnote">${BL("Un ami compte quand il crée son compte Playwatch et entre ton code (Profil → Parrainage) dans les 14 jours.", "A friend counts when they create a Playwatch account and enter your code (Profile → Invite friends) within 14 days.")}</p></div>`;
+  });
+  sh.refsheet = true;
+  loadRef(true).catch(e => { sh.state.err = BL("Parrainage indisponible pour le moment. Réessaie plus tard.", "Referrals are unavailable right now. Try again later."); sh.refresh(); });
+}
+async function shareRef() {
+  const r = ui.ref; if (!r) return;
+  const text = BL(`Je suis mes séries, films et jeux avec Playwatch. Installe l'appli et entre mon code ${r.code} (Profil → Parrainage) :`, `I track my shows, movies and games with Playwatch. Get the app and enter my code ${r.code} (Profile → Invite friends):`);
+  const url = refLink(r.code);
+  if (navigator.share) { try { await navigator.share({ text, url }); return; } catch (e) { if (e.name === "AbortError") return; } }
+  try { await navigator.clipboard.writeText(text + " " + url); toast(BL("Message copié", "Message copied")); } catch { toast(r.code); }
+}
+async function claimRef(code) {
+  code = String(code || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (code.length < 4) return toast(BL("Entre le code reçu (6 caractères)", "Enter the code you received (6 characters)"));
+  try {
+    const r = await store.callFn("referral", { action: "claim", code });
+    ui.ref = { ...(ui.ref || {}), ...r }; try { localStorage.setItem(refKey("ref"), JSON.stringify(ui.ref)); localStorage.removeItem("bobine:refpending"); } catch { }
+    toast(BL("Code validé, merci ! Ton ami est crédité.", "Code applied, thanks! Your friend gets the credit."));
+    const c = $("#refc"); if (c) c.outerHTML = refCard();
+    if (sheets.at(-1)?.refsheet) sheets.at(-1).refresh();
+  } catch (e) {
+    try { localStorage.removeItem("bobine:refpending"); } catch { }
+    toast(e?.message && !/internal/i.test(e.message) ? e.message : BL("Impossible de valider ce code pour le moment.", "Couldn't apply this code right now."));
+  }
+}
+// Lien …/?ref=CODE (version web) : gardé jusqu'à la connexion, puis validé automatiquement si le compte est récent
+try { const m = location.search.match(/[?&]ref=([A-Za-z0-9]{4,12})/); if (m) { localStorage.setItem("bobine:refpending", m[1].toUpperCase()); const u = new URL(location.href); u.searchParams.delete("ref"); history.replaceState(history.state, "", u.pathname + u.search + u.hash); } } catch { }
+// Annonce du parrainage : une seule fois par compte (gardé sur l'appareil et dans le compte), jamais par-dessus une autre fenêtre
+function refStartup(d) {
+  if (!canRefer()) return;
+  let pending = null; try { pending = localStorage.getItem("bobine:refpending"); } catch { }
+  loadRef().then(r => { if (pending && r?.canClaim) claimRef(pending); else if (pending) { try { localStorage.removeItem("bobine:refpending"); } catch { } } }).catch(() => { });
+  let seen = !!d?.refPromoSeen; try { seen = seen || localStorage.getItem(refKey("refpromo")) === "1"; } catch { }
+  if (seen || pending) return;
+  const tryShow = (left = 6) => {
+    if (sheets.length || ui.mode !== "app" || document.visibilityState !== "visible") { if (left) setTimeout(() => tryShow(left - 1), 5000); return; }
+    try { localStorage.setItem(refKey("refpromo"), "1"); } catch { }
+    store.setUserDoc({ refPromoSeen: Date.now() }).catch(() => { });
+    openSheet(() => `<div class="body bunl refpromo"><div class="bk">${BL("Nouveau", "New")}</div>
+      <div class="bhalo" style="--bc:var(--ac)"><span class="bdg xl" style="--bc:var(--ac)">${bsvg("users")}</span></div>
+      <h2>${BL("Parraine tes amis", "Invite your friends")}</h2>
+      <p>${premium.isPremium() ? BL("Fais découvrir Playwatch avec ton code perso et débloque le badge Ambassadeur.", "Share Playwatch with your personal code and unlock the Ambassador badge.")
+        : BL("3 amis qui s'inscrivent avec ton code = <b>Playwatch Premium offert à vie</b>.", "3 friends who sign up with your code = <b>Playwatch Premium for life, free</b>.")}</p>
+      <div class="bbtns"><button class="btn pri" data-a="refFromPromo">${bsvg("users")}${BL("Voir mon code", "See my code")}</button><button class="btn" data-a="closeSheet">${BL("Plus tard", "Later")}</button></div></div>`);
+  };
+  setTimeout(() => tryShow(), 4000);
 }
 
 // ═════════════ Origine des comptes (administrateur) ═════════════
@@ -2313,6 +2414,11 @@ const A = {
   recapShare: () => shareRecap(),
   closeSheet: () => history.back(),
   signups: () => openSignups(),
+  referral: () => openReferral(),
+  refFromPromo: () => { history.back(); setTimeout(openReferral, 350); },
+  refShare: () => shareRef(),
+  refCopy: async () => { try { await navigator.clipboard.writeText(ui.ref?.code || ""); toast(BL("Code copié", "Code copied")); } catch { } },
+  refClaim: () => claimRef($("#refin")?.value),
   signupF: el => { const sh = sheets.at(-1); if (sh) { sh.state.f = el.dataset.v; sh.refresh(); } },
   gretry: () => doGSearch(),
   badges: () => openBadges(),
@@ -2837,7 +2943,7 @@ async function startApp() {
   (doc0 ? Promise.resolve(doc0) : docP.then(d => d || store.getUserDoc())).then(d => {
     if (!d) return;
     ui.userDoc = d; if (typeof d.nospoil === "boolean" && d.nospoil !== ui.nospoil) setNoSpoil(d.nospoil, true); syncPresets(d);
-    trackOrigin(d);
+    trackOrigin(d); refStartup(d);
     // Apparence : celle du compte si elle est plus récente (déjà appliquée au démarrage si elle était arrivée à temps) ;
     // sinon (première fois), on envoie celle de cet appareil
     if (!lookDone && !applyAccountLook(d) && !d.look && lookAtLocal()) syncLookSoon();
