@@ -87,7 +87,7 @@ export const EN = {
   "jeux terminés": "games finished", "de jeu": "played", "Temps de jeu": "Time played", "En cours de jeu": "Playing",
   "Une clé RAWG pour les jeux": "A RAWG key for games", "Clé API RAWG": "RAWG API key", "Clé RAWG enregistrée": "RAWG key saved",
   "Les jaquettes, fiches et dates de sortie viennent de RAWG. Crée un compte gratuit sur": "Covers, details and release dates come from RAWG. Create a free account at",
-  ", clique « Get API Key » et colle la clé ici.": ", click “Get API Key” and paste the key here.", "Clé RAWG refusée — vérifie-la dans Profil → Paramètres": "RAWG key rejected — check it in Profile → Settings",
+  ", clique « Get API Key » et colle la clé ici.": ", click “Get API Key” and paste the key here.", "Clé RAWG refusée — vérifie-la dans Profil → Paramètres": "RAWG key rejected — check it in Profile → Settings", "Tu es hors ligne : la recherche de jeux a besoin d'internet.": "You're offline: game search needs an internet connection.", "Le service de jeux vidéo est saturé pour le moment. Réessaie un peu plus tard.": "The video game service is overloaded right now. Try again a bit later.", "Le service de jeux vidéo ne répond pas pour le moment. Réessaie dans quelques instants.": "The video game service isn't responding right now. Try again in a moment.", "Réessayer": "Retry",
 
   // ── Profil, statistiques, rétro ──
   "Mode local (sans compte)": "Local mode (no account)", "séries suivies": "shows followed", "épisodes vus": "episodes watched", "films vus": "movies watched", "heures devant l'écran": "hours of screen time",

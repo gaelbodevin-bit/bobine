@@ -32,10 +32,20 @@ export async function get(path, params = {}, { ttl = 24, slim } = {}) {
     for (const [k, v] of Object.entries({ ...params, key })) if (v !== undefined && v !== null && v !== "") u.searchParams.set(k, v);
     const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 20000);
     const r = await fetch(u, { signal: ctl.signal }); clearTimeout(to);
-    if (r.status === 401 || r.status === 403) throw new Error("BAD_RAWG_KEY");
-    if (!r.ok) throw new Error("RAWG " + r.status);
+    if (!r.ok) {
+      // le détail de la réponse part dans le journal des plantages (limite mensuelle atteinte, clé refusée…)
+      const body = (await r.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 160);
+      const err = new Error(`RAWG ${r.status}${body ? " " + body : ""}`);
+      err.code = r.status === 401 || r.status === 403 ? "BAD_RAWG_KEY" : r.status === 429 ? "RAWG_LIMIT" : "RAWG_HTTP";
+      throw err;
+    }
     return r.json();
-  }).then(j => { const v = slim ? slim(j) : j; const e = { t: Date.now(), v }; mem.set(ck, e); idbSet(ck, e); return v; })
+  }).then(j => {
+    const v = slim ? slim(j) : j;
+    // une recherche vide n'est pas gardée en cache : si RAWG a eu un raté, on retentera à la prochaine frappe
+    if (!(params.search && Array.isArray(v) && !v.length)) { const e = { t: Date.now(), v }; mem.set(ck, e); idbSet(ck, e); }
+    return v;
+  })
     .finally(() => inflight.delete(ck));
   inflight.set(ck, p);
   return p;
@@ -67,6 +77,10 @@ const slimGame = g => ({
 
 export const game = id => get(`/games/${id}`, {}, { ttl: 72, slim: slimGame });
 export const screenshots = id => get(`/games/${id}/screenshots`, {}, { ttl: 168, slim: j => (j.results || []).map(s => s.image).slice(0, 8) });
-export const search = q => get("/games", { search: q, page_size: 30, search_precise: "true" }, { ttl: 6, slim: slimList });
+// Recherche précise d'abord ; si rien ne sort (faute de frappe, accents, titre partiel), recherche élargie
+export const search = async q => {
+  const r = await get("/games", { search: q, page_size: 30, search_precise: "true" }, { ttl: 6, slim: slimList });
+  return r.length ? r : get("/games", { search: q, page_size: 30 }, { ttl: 6, slim: slimList });
+};
 export const list = (params, ttl = 24) => get("/games", { page_size: 30, ...params }, { ttl, slim: slimList });
 export const searchOne = async name => (await get("/games", { search: name, page_size: 5, search_precise: "true" }, { ttl: 720, slim: slimList }))[0] || null;

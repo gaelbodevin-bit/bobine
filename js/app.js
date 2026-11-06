@@ -85,7 +85,7 @@ const pimg = (path, alt, size = "w342") => path
 // ═════════════ État UI + caches de détails ═════════════
 const ui = { tab: "series", seriesFilter: "watching", sugSeg: "movie", sug: {}, movieSeg: "watchlist", seriesView: (() => { try { return localStorage.getItem("bobine:sview") || "grid"; } catch { return "grid"; } })(), q: "", pushStatus: null, mode: null };
 ui.nospoil = (() => { try { return localStorage.getItem("bobine:nospoil") === "1"; } catch { return false; } })();
-const APP_V = "v56";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
+const APP_V = "v57";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
 const ADMINS = ["gael.bodevin@gmail.com", "bluecellproduction@gmail.com", "fast.and.spermious@gmail.com"];
 const isAdmin = () => ADMINS.includes((store.data.user?.email || "").toLowerCase());
 
@@ -1530,11 +1530,15 @@ function needGame(id) {
   return gameD.get(id);
 }
 let gErrShown = 0;
+const gameErrText = e => !navigator.onLine ? "Tu es hors ligne : la recherche de jeux a besoin d'internet."
+  : e?.code === "BAD_RAWG_KEY" || e?.code === "RAWG_LIMIT" ? "Le service de jeux vidéo est saturé pour le moment. Réessaie un peu plus tard."
+  : "Le service de jeux vidéo ne répond pas pour le moment. Réessaie dans quelques instants.";
 function gameErr(e) {
   console.warn(e);
   if (Date.now() - gErrShown < 8000) return; gErrShown = Date.now();
-  if (e.message === "BAD_RAWG_KEY") toast("Clé RAWG refusée — vérifie-la dans Profil → Paramètres");
-  else if (!navigator.onLine) toast("Hors ligne — affichage du cache");
+  if (e?.code) logError(e, "rawg");
+  if (!navigator.onLine) toast("Hors ligne — affichage du cache");
+  else if (e?.code) toast(gameErrText(e));
 }
 const gcover = (url, alt) => url ? `<img src="${gimg(url, 640)}" alt="" loading="lazy" decoding="async">` : `<div class="noimg">${esc(alt)}</div>`;
 const noKey = () => `<div class="card"><h3>${I.pad.replace("<svg", '<svg style="width:20px;height:20px;vertical-align:-4px;margin-right:8px;color:var(--ac)"')}Une clé RAWG pour les jeux</h3>
@@ -1719,12 +1723,13 @@ async function doGSearch() {
   if (!q) { ui.gres = null; return renderGResults(); }
   ui.gres = "loading"; renderGResults();
   try { const f = ui.gfilt, extra = { ...gfParams(), ...(f.sort ? { ordering: f.sort } : {}) }; const r = Object.keys(extra).length ? await rawg.list({ search: q, search_precise: "true", ...extra }, 6) : await rawg.search(q); r.forEach(g => gameLite.set(g.id, g)); if (seq === gSeq) { ui.gres = r; renderGResults(); } }
-  catch (e) { gameErr(e); if (seq === gSeq) { ui.gres = []; renderGResults(); } }
+  catch (e) { gameErr(e); if (seq === gSeq) { ui.gres = { err: gameErrText(e) }; renderGResults(); } }
 }
 function renderGResults() {
   const r = $("#gresults"); if (!r) return;
   const bar = gFilterBar();
   if (ui.gres === "loading") { r.innerHTML = bar + `<div class="empty" style="padding:30px">Recherche…</div>`; return; }
+  if (ui.gres?.err) { r.innerHTML = bar + `<div class="empty" style="padding:30px">${esc(ui.gres.err)}<br><button class="btn" data-a="gretry" style="margin:14px auto 0;display:flex">Réessayer</button></div>`; return; }
   if (Array.isArray(ui.gres)) {
     const res = ui.gfilt.hide ? ui.gres.filter(g => !store.data.games.has(g.id)) : ui.gres;
     r.innerHTML = bar + (res.length ? res.map(g => { const lib = store.data.games.has(g.id); return `<div class="li" data-a="game" data-id="${g.id}"><div class="ps">${gcover(g.background_image, g.name)}</div>
@@ -2235,6 +2240,7 @@ const A = {
   recap: el => openRecap(el.dataset.v ? +el.dataset.v : recapYear()),
   recapShare: () => shareRecap(),
   closeSheet: () => history.back(),
+  gretry: () => doGSearch(),
   badges: () => openBadges(),
   badge: el => openBadge(el.dataset.v),
   badgeShare: el => shareBadge(el.dataset.v),
