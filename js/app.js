@@ -85,7 +85,7 @@ const pimg = (path, alt, size = "w342") => path
 // ═════════════ État UI + caches de détails ═════════════
 const ui = { tab: "series", seriesFilter: "watching", sugSeg: "movie", sug: {}, movieSeg: "watchlist", seriesView: (() => { try { return localStorage.getItem("bobine:sview") || "grid"; } catch { return "grid"; } })(), q: "", pushStatus: null, mode: null };
 ui.nospoil = (() => { try { return localStorage.getItem("bobine:nospoil") === "1"; } catch { return false; } })();
-const APP_V = "v61";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
+const APP_V = "v62";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
 const ADMINS = ["gael.bodevin@gmail.com", "bluecellproduction@gmail.com", "fast.and.spermious@gmail.com"];
 const isAdmin = () => ADMINS.includes((store.data.user?.email || "").toLowerCase());
 
@@ -1858,7 +1858,7 @@ function syncLookSoon() {
       .then(() => { if (ui.userDoc) ui.userDoc.lookAt = at; }).catch(e => logError(e, "look"));
   }, 1500);
 }
-function applyAccountLook(d) {
+function applyAccountLook(d, render = true) {
   const L = d?.look; if (!L || typeof L !== "object") return false;
   if ((+d.lookAt || 0) <= lookAtLocal()) return false;   // cet appareil a plus récent : il sera envoyé au compte à la prochaine modification
   applyTheme(L.theme && typeof L.theme === "object" ? L.theme : null, true, true);
@@ -1869,7 +1869,7 @@ function applyAccountLook(d) {
     localStorage.setItem("bobine:taborder", JSON.stringify(ui.tabOrder)); localStorage.setItem("bobine:views", JSON.stringify(ui.views));
     localStorage.setItem("bobine:domains", JSON.stringify(ui.domains)); localStorage.setItem("bobine:lookAt", String(+d.lookAt));
   } catch { }
-  fixDomain(); renderView(true);
+  fixDomain(); if (render) renderView(true);
   return true;
 }
 // Un thème = { bg, band, ac, tx? (texte, auto si absent), radius: round|soft|square, bar: glass|clear|solid }
@@ -2804,6 +2804,11 @@ async function startApp() {
   const t0 = Date.now(), hard = t0 + 8000;   // quoi qu'il arrive (réseau, cache bloqué…), la liste s'affiche au plus tard 8 s après
   let pushDone = false;
   const pushP = push.status().then(s => { ui.pushStatus = s; pushDone = true; }).catch(() => { pushDone = true; });
+  // Préférences du compte demandées tout de suite (en parallèle du chargement) : l'apparence est appliquée
+  // pendant l'écran de démarrage, avant le premier affichage, au lieu de basculer une fois l'appli ouverte
+  const u0 = store.data.user;
+  const docP = u0 && !u0.local ? store.getUserDoc().catch(() => null) : Promise.resolve(null);
+  let doc0 = null; docP.then(d => { doc0 = d; });
   try {
     await whenStoreReady(t0 + 5000);
     if (run !== startRun || ui.mode !== "loading") return;
@@ -2817,6 +2822,9 @@ async function startApp() {
     await until(preloadShows(deadline), hard);   // séries ajoutées depuis un autre appareil pendant l'attente
   } catch (e) { console.error("préchargement", e); bootErr = e; }
   if (run !== startRun || ui.mode !== "loading") return;
+  if (!doc0) await until(docP, Math.min(Date.now() + 1500, hard));   // une réinstallation attend l'apparence du compte (1,5 s max)
+  let lookDone = false;
+  if (doc0) { try { lookDone = applyAccountLook(doc0, false); } catch (e) { console.error(e); } }
   ui.mode = "app";
   $("#tabs").classList.remove("hidden"); $("#view").style.padding = "";
   try { renderView(true); } catch (e) { console.error(e); return fatal(e); }
@@ -2826,11 +2834,13 @@ async function startApp() {
   if (!pushDone) pushP.then(quietRender);
   push.refresh();
   // Préférences liées au compte (mode sans spoiler choisi sur un autre appareil, calendrier)
-  store.getUserDoc().then(d => {
+  (doc0 ? Promise.resolve(doc0) : docP.then(d => d || store.getUserDoc())).then(d => {
+    if (!d) return;
     ui.userDoc = d; if (typeof d.nospoil === "boolean" && d.nospoil !== ui.nospoil) setNoSpoil(d.nospoil, true); syncPresets(d);
     trackOrigin(d);
-    // Apparence : celle du compte si elle est plus récente ; sinon (première fois), on envoie celle de cet appareil
-    if (!applyAccountLook(d) && !d.look && lookAtLocal()) syncLookSoon();
+    // Apparence : celle du compte si elle est plus récente (déjà appliquée au démarrage si elle était arrivée à temps) ;
+    // sinon (première fois), on envoie celle de cet appareil
+    if (!lookDone && !applyAccountLook(d) && !d.look && lookAtLocal()) syncLookSoon();
     // Langue et pays de l'utilisateur : utilisés par les notifications et le calendrier (serveur)
     if (store.data.user && !store.data.user.local && (d.lang !== UILANG || d.region !== UIREGION)) store.setUserDoc({ lang: UILANG, region: UIREGION }).catch(() => { });
   }).catch(() => { });
