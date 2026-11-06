@@ -18,9 +18,10 @@ export function gimg(url, w = 640) {
 const mem = new Map(), inflight = new Map();
 let active = 0; const queue = [];
 const pump = () => { while (active < 4 && queue.length) { const { fn, res, rej } = queue.shift(); active++; fn().then(res, rej).finally(() => { active--; pump(); }); } };
-const schedule = fn => new Promise((res, rej) => { queue.push({ fn, res, rej }); pump(); });
+// File d'attente (4 requêtes à la fois) ; une recherche tapée par l'utilisateur passe devant les listes de Découvrir
+const schedule = (fn, prio) => new Promise((res, rej) => { queue[prio ? "unshift" : "push"]({ fn, res, rej }); pump(); });
 
-export async function get(path, params = {}, { ttl = 24, slim } = {}) {
+export async function get(path, params = {}, { ttl = 24, slim, prio } = {}) {
   const key = getKey();
   if (!key) throw new Error("NO_RAWG_KEY");
   const ck = "rawg:" + path + "?" + new URLSearchParams(params).toString();
@@ -30,7 +31,7 @@ export async function get(path, params = {}, { ttl = 24, slim } = {}) {
   const p = schedule(async () => {
     const u = new URL(BASE + path);
     for (const [k, v] of Object.entries({ ...params, key })) if (v !== undefined && v !== null && v !== "") u.searchParams.set(k, v);
-    const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 20000);
+    const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), prio ? 12000 : 20000);
     const r = await fetch(u, { signal: ctl.signal }); clearTimeout(to);
     if (!r.ok) {
       // le détail de la réponse part dans le journal des plantages (limite mensuelle atteinte, clé refusée…)
@@ -40,7 +41,7 @@ export async function get(path, params = {}, { ttl = 24, slim } = {}) {
       throw err;
     }
     return r.json();
-  }).then(j => {
+  }, prio).then(j => {
     const v = slim ? slim(j) : j;
     // une recherche vide n'est pas gardée en cache : si RAWG a eu un raté, on retentera à la prochaine frappe
     if (!(params.search && Array.isArray(v) && !v.length)) { const e = { t: Date.now(), v }; mem.set(ck, e); idbSet(ck, e); }
@@ -79,8 +80,8 @@ export const game = id => get(`/games/${id}`, {}, { ttl: 72, slim: slimGame });
 export const screenshots = id => get(`/games/${id}/screenshots`, {}, { ttl: 168, slim: j => (j.results || []).map(s => s.image).slice(0, 8) });
 // Recherche précise d'abord ; si rien ne sort (faute de frappe, accents, titre partiel), recherche élargie
 export const search = async q => {
-  const r = await get("/games", { search: q, page_size: 30, search_precise: "true" }, { ttl: 6, slim: slimList });
-  return r.length ? r : get("/games", { search: q, page_size: 30 }, { ttl: 6, slim: slimList });
+  const r = await get("/games", { search: q, page_size: 30, search_precise: "true" }, { ttl: 6, slim: slimList, prio: true });
+  return r.length ? r : get("/games", { search: q, page_size: 30 }, { ttl: 6, slim: slimList, prio: true });
 };
 export const list = (params, ttl = 24) => get("/games", { page_size: 30, ...params }, { ttl, slim: slimList });
 export const searchOne = async name => (await get("/games", { search: name, page_size: 5, search_precise: "true" }, { ttl: 720, slim: slimList }))[0] || null;

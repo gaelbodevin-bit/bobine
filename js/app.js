@@ -85,7 +85,7 @@ const pimg = (path, alt, size = "w342") => path
 // ═════════════ État UI + caches de détails ═════════════
 const ui = { tab: "series", seriesFilter: "watching", sugSeg: "movie", sug: {}, movieSeg: "watchlist", seriesView: (() => { try { return localStorage.getItem("bobine:sview") || "grid"; } catch { return "grid"; } })(), q: "", pushStatus: null, mode: null };
 ui.nospoil = (() => { try { return localStorage.getItem("bobine:nospoil") === "1"; } catch { return false; } })();
-const APP_V = "v57";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
+const APP_V = "v58";   // version affichée dans le journal des plantages (garder alignée sur sw.js)
 const ADMINS = ["gael.bodevin@gmail.com", "bluecellproduction@gmail.com", "fast.and.spermious@gmail.com"];
 const isAdmin = () => ADMINS.includes((store.data.user?.email || "").toLowerCase());
 
@@ -325,6 +325,7 @@ function moveTab(dom, k, d) {
   [list[i], list[j]] = [list[j], list[i]];
   ui.tabOrder = { ...ui.tabOrder, [dom]: list };
   try { localStorage.setItem("bobine:taborder", JSON.stringify(ui.tabOrder)); } catch { }
+  syncLookSoon();
 }
 ui.lastTab = { av: avTabs()[0][0], games: gTabs()[0][0] };
 const domainOf = tab => G_TABS.some(t => t[0] === tab) ? "games" : "av";
@@ -966,7 +967,7 @@ function vSettings(v, force) {
     const d = { ...ui.domains, [cb.dataset.dom]: cb.checked };
     if (!d.av && !d.games) { cb.checked = true; return toast("Garde au moins un des deux"); }
     ui.domains = d; try { localStorage.setItem("bobine:domains", JSON.stringify(d)); } catch { }
-    fixDomain(); renderView(true);
+    syncLookSoon(); fixDomain(); renderView(true);
   }));
 }
 function profStats() {
@@ -1800,6 +1801,34 @@ const hex2rgb = h => { h = h.replace("#", ""); return [0, 2, 4].map(i => parseIn
 const rgb2hex = a => "#" + a.map(x => Math.max(0, Math.min(255, Math.round(x))).toString(16).padStart(2, "0")).join("");
 const mix = (a, b, t) => rgb2hex(hex2rgb(a).map((x, i) => x + (hex2rgb(b)[i] - x) * t));
 const lum = h => { const [r, g, b] = hex2rgb(h).map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }); return .2126 * r + .7152 * g + .0722 * b; };
+// Apparence liée au compte (thème, ordre des onglets, vues liste/grille, rubriques) : retrouvée après une réinstallation
+// ou sur un autre appareil. Le plus récent gagne : date locale « bobine:lookAt » contre « lookAt » du compte.
+let lookT = 0;
+const lookAtLocal = () => { try { return +localStorage.getItem("bobine:lookAt") || 0; } catch { return 0; } };
+function syncLookSoon() {
+  try { localStorage.setItem("bobine:lookAt", String(Date.now())); } catch { }
+  clearTimeout(lookT);
+  lookT = setTimeout(() => {
+    if (!store.data.user || store.data.user.local) return;
+    const at = lookAtLocal();
+    store.setUserDoc({ look: { theme: getTheme() || null, tabOrder: ui.tabOrder || {}, views: ui.views || {}, domains: ui.domains }, lookAt: at })
+      .then(() => { if (ui.userDoc) ui.userDoc.lookAt = at; }).catch(e => logError(e, "look"));
+  }, 1500);
+}
+function applyAccountLook(d) {
+  const L = d?.look; if (!L || typeof L !== "object") return false;
+  if ((+d.lookAt || 0) <= lookAtLocal()) return false;   // cet appareil a plus récent : il sera envoyé au compte à la prochaine modification
+  applyTheme(L.theme && typeof L.theme === "object" ? L.theme : null, true, true);
+  ui.tabOrder = L.tabOrder && typeof L.tabOrder === "object" ? L.tabOrder : {};
+  ui.views = L.views && typeof L.views === "object" ? L.views : {};
+  if (L.domains && (L.domains.av || L.domains.games)) ui.domains = { av: !!L.domains.av, games: !!L.domains.games };
+  try {
+    localStorage.setItem("bobine:taborder", JSON.stringify(ui.tabOrder)); localStorage.setItem("bobine:views", JSON.stringify(ui.views));
+    localStorage.setItem("bobine:domains", JSON.stringify(ui.domains)); localStorage.setItem("bobine:lookAt", String(+d.lookAt));
+  } catch { }
+  fixDomain(); renderView(true);
+  return true;
+}
 // Un thème = { bg, band, ac, tx? (texte, auto si absent), radius: round|soft|square, bar: glass|clear|solid }
 const RADII = [["round", "Arrondis"], ["soft", "Légers"], ["square", "Carrés"]];
 const BARS = [["glass", "Translucide"], ["clear", "Transparente"], ["solid", "Opaque"]];
@@ -1807,9 +1836,9 @@ function getTheme() { try { return JSON.parse(localStorage.getItem("bobine:theme
 const curTheme = () => getTheme() || { ...THEMES.nuit };
 const autoTx = t => lum(t.bg) > .4 ? "#16161a" : "#f3f3f6";
 const sameLook = (a, b) => !!a && !!b && a.bg === b.bg && a.band === b.band && a.ac === b.ac && (a.tx || "") === (b.tx || "") && (a.radius || "round") === (b.radius || "round") && (a.bar || "glass") === (b.bar || "glass");
-function applyTheme(t, save) {
+function applyTheme(t, save, fromServer) {
   const de = document.documentElement, r = de.style;
-  if (save) { try { t ? localStorage.setItem("bobine:theme", JSON.stringify(t)) : localStorage.removeItem("bobine:theme"); } catch { } }
+  if (save) { try { t ? localStorage.setItem("bobine:theme", JSON.stringify(t)) : localStorage.removeItem("bobine:theme"); } catch { } if (!fromServer) syncLookSoon(); }
   de.classList.remove("rad-soft", "rad-square", "bar-clear", "bar-solid");
   if (t?.radius && t.radius !== "round") de.classList.add("rad-" + t.radius);
   if (t?.bar && t.bar !== "glass") de.classList.add("bar-" + t.bar);
@@ -2290,7 +2319,7 @@ const A = {
     const pick = pool[Math.floor(Math.random() * pool.length)];
     const b = $(".roul"); b?.classList.add("spin"); setTimeout(() => { b?.classList.remove("spin"); openTv(pick.s.id); toast(`🎲 Ce soir : ${pick.t?.name || pick.s.name}`); }, 650);
   },
-  sview: () => { const k = viewKey(); ui.views[k] = viewOf(k) === "grid" ? "list" : "grid"; try { localStorage.setItem("bobine:views", JSON.stringify(ui.views)); } catch { } renderView(); },
+  sview: () => { const k = viewKey(); ui.views[k] = viewOf(k) === "grid" ? "list" : "grid"; try { localStorage.setItem("bobine:views", JSON.stringify(ui.views)); } catch { } syncLookSoon(); renderView(); },
   lmore: el => loadMoreLatest(el.dataset.v),
   fhide: el => setFilter(el.dataset.v, "hide", !df(el.dataset.v).hide),
   fclear: el => { ui.dfilt[el.dataset.v] = {}; saveDf(); loadLatest(el.dataset.v); renderResults(); },
@@ -2319,10 +2348,10 @@ const A = {
     const s = ui.lookSh?.start; if (!s) return;
     applyTheme(s.theme, true);
     ui.tabOrder = JSON.parse(s.order); try { localStorage.setItem("bobine:taborder", s.order); } catch { }
-    lookRefresh(); toast("Changements annulés");
+    syncLookSoon(); lookRefresh(); toast("Changements annulés");
   },
   tabMove: el => { const [dom, k, d] = el.dataset.v.split(":"); moveTab(dom, k, +d); lookRefresh(); },
-  tabReset: () => { ui.tabOrder = {}; try { localStorage.removeItem("bobine:taborder"); } catch { } lookRefresh(); },
+  tabReset: () => { ui.tabOrder = {}; try { localStorage.removeItem("bobine:taborder"); } catch { } syncLookSoon(); lookRefresh(); },
   presetSave: () => savePreset(ui.lookEdit),
   presetAsNew: () => savePreset(null),
   presetUse: el => {
@@ -2496,6 +2525,13 @@ document.addEventListener("focusin", e => { if (isTyping(e.target)) document.bod
 document.addEventListener("focusout", () => setTimeout(() => { if (!isTyping(document.activeElement)) document.body.classList.remove("kb"); syncSrow(); }, 180));
 document.addEventListener("input", e => { if (e.target.closest?.(".srow")) syncSrow(); });
 document.addEventListener("touchmove", () => { const a = document.activeElement; if (a && (a.id === "q" || a.id === "gq")) a.blur(); }, { passive: true });
+// Filet de sécurité : si le champ actif a été remplacé par un nouvel affichage (pas d'événement « focusout » sur iPhone),
+// la barre d'onglets restait cachée. On vérifie au toucher, au retour dans l'appli et quand le clavier se referme.
+const kbCheck = () => { if (document.body.classList.contains("kb") && !isTyping(document.activeElement)) document.body.classList.remove("kb"); };
+["touchend", "click", "scroll"].forEach(ev => document.addEventListener(ev, () => setTimeout(kbCheck, 250), { passive: true, capture: true }));
+document.addEventListener("visibilitychange", kbCheck);
+window.visualViewport?.addEventListener("resize", () => setTimeout(kbCheck, 250));
+setInterval(kbCheck, 2000);
 // Filtres (listes déroulantes des chips)
 document.addEventListener("change", e => { const t = e.target; if (t?.dataset?.f && t.dataset.k) setFilter(t.dataset.k, t.dataset.f, t.value); else if (t?.dataset?.gf) setGFilter(t.dataset.gf, t.value); });
 // Défilement : la barre de recherche se cache en descendant et revient en remontant ; bouton « remonter en haut »
@@ -2747,6 +2783,8 @@ async function startApp() {
   // Préférences liées au compte (mode sans spoiler choisi sur un autre appareil, calendrier)
   store.getUserDoc().then(d => {
     ui.userDoc = d; if (typeof d.nospoil === "boolean" && d.nospoil !== ui.nospoil) setNoSpoil(d.nospoil, true); syncPresets(d);
+    // Apparence : celle du compte si elle est plus récente ; sinon (première fois), on envoie celle de cet appareil
+    if (!applyAccountLook(d) && !d.look && lookAtLocal()) syncLookSoon();
     // Langue et pays de l'utilisateur : utilisés par les notifications et le calendrier (serveur)
     if (store.data.user && !store.data.user.local && (d.lang !== UILANG || d.region !== UIREGION)) store.setUserDoc({ lang: UILANG, region: UIREGION }).catch(() => { });
   }).catch(() => { });
