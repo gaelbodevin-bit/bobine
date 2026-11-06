@@ -3,6 +3,10 @@ import { RAWG_KEY } from "./config.js";
 import { idbGet, idbSet } from "./tmdb.js";
 
 const BASE = "https://api.rawg.io/api";
+// Relais Playwatch (cache commun + secours IGDB quand RAWG est en panne). S'il n'est pas joignable, on appelle RAWG directement.
+const PROXY = "https://europe-west1-bobine-4d524.cloudfunctions.net/games";
+let proxyOff = false;
+const ownKey = () => { try { return !!localStorage.getItem("bobine:rawg"); } catch { return false; } };
 
 export function getKey() {
   try { return localStorage.getItem("bobine:rawg") || RAWG_KEY; } catch { return RAWG_KEY; }
@@ -29,6 +33,22 @@ export async function get(path, params = {}, { ttl = 24, slim, prio } = {}) {
   const c = await idbGet(ck); if (c && Date.now() - c.t < ttl * 3600e3) { mem.set(ck, c); return c.v; }
   if (inflight.has(ck)) return inflight.get(ck);
   const p = schedule(async () => {
+    if (!proxyOff && !ownKey()) {
+      const pu = new URL(PROXY + path);
+      for (const [k, v] of Object.entries({ ...params, _ttl: ttl })) if (v !== undefined && v !== null && v !== "") pu.searchParams.set(k, v);
+      const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 18000);
+      let r = null;
+      try { r = await fetch(pu, { signal: ctl.signal }); }
+      catch (e) { if (e.name === "AbortError") { const err = new Error("RAWG timeout (relais)"); err.code = "RAWG_HTTP"; throw err; } proxyOff = true; }
+      finally { clearTimeout(to); }
+      if (r) {
+        if (r.headers.get("X-Source")) {   // réponse du relais (y compris « introuvable » ou « service en panne »)
+          if (r.ok) return r.json();
+          const err = new Error(`RAWG ${r.status} (relais ${r.headers.get("X-Source")})`); err.code = r.status === 404 ? "RAWG_404" : "RAWG_HTTP"; throw err;
+        }
+        proxyOff = true;   // relais pas encore déployé : RAWG en direct
+      }
+    }
     const u = new URL(BASE + path);
     for (const [k, v] of Object.entries({ ...params, key })) if (v !== undefined && v !== null && v !== "") u.searchParams.set(k, v);
     const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), prio ? 12000 : 20000);
