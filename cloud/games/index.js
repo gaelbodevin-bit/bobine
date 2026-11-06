@@ -30,6 +30,17 @@ async function cachePut(k, body, src) {
 }
 
 // ─────────────── RAWG ───────────────
+// Disjoncteur : après un échec, on n'attend plus RAWG pendant 5 min (réponse IGDB immédiate), état partagé via Firestore
+let rawgDownUntil = 0, rawgCheckedAt = 0;
+async function rawgIsDown() {
+  if (Date.now() < rawgDownUntil) return true;
+  if (Date.now() - rawgCheckedAt > 60e3) {
+    rawgCheckedAt = Date.now();
+    const d = await cacheGet("_rawgstatus"); if (d?.downUntil > Date.now()) { rawgDownUntil = d.downUntil; return true; }
+  }
+  return false;
+}
+function markRawgDown() { rawgDownUntil = Date.now() + 5 * 60e3; db.doc("gcache/_rawgstatus").set({ downUntil: rawgDownUntil, t: Date.now(), src: "status" }).catch(() => { }); }
 async function rawg(path, params) {
   const u = new URL("https://api.rawg.io/api" + path);
   for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
@@ -178,11 +189,14 @@ export async function handle(path, query) {
   if (c && Date.now() - c.t < (c.src === "igdb" ? Math.min(ttl, 2 * H) : ttl)) return { status: 200, body: c.body, src: "cache-" + c.src };
   const isIgdbId = (path.match(/^\/games\/(\d+)/) || [])[1] >= IGDB_OFFSET;
   if (!isIgdbId) {
-    try {
-      const r = await rawg(path, params);
-      if (r.status === 200) { cachePut(k, r.body, "rawg"); return { ...r, src: "rawg" }; }
-      if (r.status === 404) return { ...r, src: "rawg" };
-    } catch { /* RAWG injoignable : on continue */ }
+    if (!(await rawgIsDown())) {
+      try {
+        const r = await rawg(path, params);
+        if (r.status === 200) { cachePut(k, r.body, "rawg"); return { ...r, src: "rawg" }; }
+        if (r.status === 404) return { ...r, src: "rawg" };
+        if (r.status >= 500 || r.status === 429) markRawgDown();
+      } catch { markRawgDown(); /* RAWG injoignable : on continue */ }
+    }
     if (c) return { status: 200, body: c.body, src: "stale-" + c.src };
   }
   if (IGDB_ID && IGDB_SECRET) {

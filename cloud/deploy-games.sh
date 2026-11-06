@@ -10,8 +10,8 @@ cd "$(dirname "$0")/.."
 
 echo "── 1/3 Identifiants Twitch (IGDB) ──"
 echo "À créer sur https://dev.twitch.tv/console/apps → « Register Your Application »"
-echo "  Nom : Playwatch · URL de redirection : http://localhost · Catégorie : Application Integration · Client : Confidentiel"
-read -rp "Client ID Twitch (Entrée pour passer) : " CID
+echo "  Nom : Playwatch · URL de redirection : https://playwatch.app · Catégorie : Application Integration · Client : Confidentiel"
+read -rp "Client ID Twitch (Entrée = garder les identifiants déjà enregistrés) : " CID
 SECRETS=""
 if [[ -n "$CID" ]]; then
   read -rsp "Client Secret Twitch : " CSEC; echo
@@ -32,6 +32,9 @@ if [[ -n "$CID" ]]; then
   done
   SECRETS="--set-secrets=IGDB_CLIENT_ID=IGDB_CLIENT_ID:latest,IGDB_CLIENT_SECRET=IGDB_CLIENT_SECRET:latest"
   echo "Identifiants Twitch vérifiés et enregistrés."
+elif gcloud secrets describe IGDB_CLIENT_SECRET --project "$P" >/dev/null 2>&1; then
+  SECRETS="--set-secrets=IGDB_CLIENT_ID=IGDB_CLIENT_ID:latest,IGDB_CLIENT_SECRET=IGDB_CLIENT_SECRET:latest"
+  echo "Identifiants Twitch déjà enregistrés : on les garde."
 else
   echo "Pas d'IGDB : le relais servira le cache commun uniquement."
 fi
@@ -40,7 +43,7 @@ echo "── 2/3 Fonction games ──"
 RK=$(grep -oP 'RAWG_KEY = "\K[^"]+' js/config.js)
 (cd cloud/games && gcloud functions deploy games --gen2 --project="$P" --region="$R" \
   --runtime=nodejs22 --source=. --entry-point=games --trigger-http --allow-unauthenticated \
-  --memory=256Mi --timeout=30s --max-instances=5 --set-env-vars=RAWG_KEY="$RK" $SECRETS --quiet)
+  --memory=512Mi --cpu=1 --concurrency=40 --timeout=30s --max-instances=10 --set-env-vars=RAWG_KEY="$RK" $SECRETS --quiet)
 
 echo "── 3/3 Vérification ──"
 U="https://$R-$P.cloudfunctions.net/games/games?search=rocket%20league&page_size=3&search_precise=true"

@@ -46,7 +46,7 @@ export async function get(path, params = {}, { ttl = 24, slim, prio } = {}) {
           if (r.ok) return r.json();
           const err = new Error(`RAWG ${r.status} (relais ${r.headers.get("X-Source")})`); err.code = r.status === 404 ? "RAWG_404" : "RAWG_HTTP"; throw err;
         }
-        proxyOff = true;   // relais pas encore déployé : RAWG en direct
+        if (r.status === 404) proxyOff = true;   // relais absent : RAWG en direct pour la suite ; sinon (saturation passagère), RAWG en direct pour cette requête seulement
       }
     }
     const u = new URL(BASE + path);
